@@ -403,10 +403,10 @@ namespace opengl3
             return Math.Sqrt(x * x + y * y);
         }
 
-        public double magnitude_ax(Ax ax)
+        public double magnitude_ax(PlanType ax)
         {
-            if (ax == Ax.X) return Math.Abs(x);
-            if (ax == Ax.Y) return Math.Abs(y);
+            if (ax == PlanType.X) return Math.Abs(x);
+            if (ax == PlanType.Y) return Math.Abs(y);
             else return Math.Abs(z);
         }
         public static float[] toMesh(Point3d_GL[] point3Ds)
@@ -586,19 +586,6 @@ namespace opengl3
             pm.color = p.color;
             return pm;
         }
-        static double[,] Matrix4x4ToDouble(Matrix4x4f matrixA)
-        {
-            var ret = new double[4, 4];
-            for (var i = 0; i < 4; i++)
-            {
-                for (var j = 0; j < 4; j++)
-                {
-                    ret[i, j] = (double)matrixA[(uint)i, (uint)j];
-
-                }
-            }
-            return ret;
-        }
 
         static double[,] Matrix4x4ToDouble(Matrix<double> matrixA)
         {
@@ -628,11 +615,7 @@ namespace opengl3
                   p1.z * p2.x - p1.x * p2.z,
                   p1.x * p2.y - p1.y * p2.x, p1.color);
         }
-        public static Point3d_GL operator *(Matrix4x4f matrixA, Point3d_GL p)
-        {
-            var matrix = Matrix4x4ToDouble(matrixA);
-            return matrix * p;
-        }
+
 
         public static Point3d_GL operator *(Matrix<double> matrixA, Point3d_GL p)
         {
@@ -711,38 +694,7 @@ namespace opengl3
             return arccos(p1 ^ p2);
         }
 
-        public static Matrix<double> get_align_matrix_flat(Point3d_GL[] ps)
-        {
-            var ps_claster = (Point3d_GL[])ps.Clone();
-            var ps_diag = Point3d_GL.findMainDiag(ps_claster);
-            var p1 = ps_claster[ps_diag[0]];
-            var p2 = ps_claster[ps_diag[1]];
-            var ang = Point3d_GL.calcAngleX(p1, p2);
-            var m_rot = RobotFrame.RotZmatr(-ang);
-            Console.WriteLine("ang: " + ang);
 
-            // string claster = GL1.addPointMesh(ps_claster, Color3d_GL.red(),"claster");
-            //var ps_rot = Point3d_GL.multMatr(ps_claster, m_rot);
-            var ps_rot = Point3d_GL.multMatr_p_m(m_rot, ps_claster);
-
-            var minyi = Point3d_GL.Min_Y_i(ps_rot);
-            Console.WriteLine("p1: " + ps_rot[ps_diag[0]]);
-            Console.WriteLine("p2: " + ps_rot[ps_diag[1]]);
-            //GL1.addPointMesh(ps_rot, Color3d_GL.red());
-
-            if ((p1 - ps_claster[minyi]).magnitude() > (p2 - ps_claster[minyi]).magnitude())
-            {
-                p2 = ps_claster[ps_diag[0]];
-                p1 = ps_claster[ps_diag[1]];
-            }
-            var vx = (p2 - ps_claster[minyi]).normalize();
-            var vy = (p1 - ps_claster[minyi]).normalize();
-            var vz = vx | vy;
-            var m = RobotFrame.matrix_assemble(vx, vy, vz, ps_claster[minyi]);
-
-            var m_inv = UtilOpenCV.inv(m);
-            return m_inv;
-        }
         public static Point3d_GL[][] get_sides(Point3d_GL[] ps)
         {
             var cx = Point3d_GL.Min(ps) + (Point3d_GL.Max(ps) - Point3d_GL.Min(ps)) / 2;
@@ -791,17 +743,7 @@ namespace opengl3
 
 
 
-        public static int[] get_corners_45_xy(Point3d_GL[] ps)
-        {
-            var m_rot = RobotFrame.RotZmatr(Math.PI/4);
-            var ps_rot = Point3d_GL.multMatr_p_m(m_rot, ps);
-            var pts = new int[4];
-            pts[0] = Min_X_i(ps_rot);
-            pts[1] = Min_Y_i(ps_rot);
-            pts[2] = Max_X_i(ps_rot);
-            pts[3] = Max_Y_i(ps_rot);
-            return pts;
-        }
+
         public static bool one_dir(Point3d_GL p1, Point3d_GL p2)
         {
             if (ang(p1, p2) < Math.PI / 2) return true;

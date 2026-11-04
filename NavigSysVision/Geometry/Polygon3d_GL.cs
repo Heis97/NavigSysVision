@@ -195,11 +195,11 @@ namespace opengl3
             if (ps1.Length < 2 || ps1.Length < 2) return null;
             var ps_or = Point3d_GL.order_points(ps1);
             var dp = ps_or[ps_or.Length - 1] - ps_or[0];
-            Ax ax;
-            if (Math.Abs(dp.x) > Math.Abs(dp.y)) ax = Ax.X;
-            else ax = Ax.Y;
+            PlanType ax;
+            if (Math.Abs(dp.x) > Math.Abs(dp.y)) ax = PlanType.X;
+            else ax = PlanType.Y;
 
-            if (ax == Ax.X)
+            if (ax == PlanType.X)
             {
                 ps1 = sortByX(ps1);
                 ps2 = sortByX(ps2);

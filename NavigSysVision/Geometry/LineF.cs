@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace opengl3
 {
+   public enum PlanType { X,Y};
     public class LineF
     {
         public float X;

@@ -1,12 +1,13 @@
 ﻿using System;
 
-namespace NavigSysVision
-{
+namespace opengl3
+{ 
     internal class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
+            var navig_vis = new NavigVision();
+
         }
     }
 }
