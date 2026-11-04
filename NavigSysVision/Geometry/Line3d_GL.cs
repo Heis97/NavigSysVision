@@ -40,7 +40,7 @@ namespace opengl3
             return f1.dist_to_flat(p1);
         }
 
-        static public Point3d_GL point_betw_cross_lines(Line3d_GL l1, Line3d_GL l2)
+        static public Point3d_GL point_betw_cross_lines(Line3d_GL l1, Line3d_GL l2,double dist_cross = -1)
         {
             var p1 = l1.p; var p2 = l1.p_end;
             var p3 = l2.p; var p4 = l2.p_end;
@@ -57,7 +57,13 @@ namespace opengl3
             var p1_cross = Flat3d_GL.cross(f1_v, f2_v,f1_h);
             var p2_cross = Flat3d_GL.cross(f1_v, f2_v, f2_h);
             var p_med_cross = new Point3d_GL(p1_cross,p2_cross);
-           // Console.WriteLine((p2_cross- p1_cross).magnitude());    
+            if(dist_cross>0)
+            {
+                var cur_dist = (p2_cross - p1_cross).magnitude();
+                if (cur_dist < dist_cross) return p_med_cross;
+                else return Point3d_GL.notExistP();
+            }
+           // Console.WriteLine();    
             return p_med_cross;
         }
 

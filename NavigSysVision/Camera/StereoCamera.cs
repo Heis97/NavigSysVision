@@ -91,6 +91,7 @@ namespace opengl3
             }
             return lines3d;
         }
+
         public Point3d_GL[] comp_points_3d(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2,int ind_main=0)
         {
             if (ps1 == null || ps2 == null) return null;
@@ -108,6 +109,30 @@ namespace opengl3
             }
            
             return ps_comp;
+        }
+
+        public Point3d_GL[] comp_points_3d_not_matched(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2, int ind_main = 0)
+        {
+            if (ps1 == null || ps2 == null) return null;
+
+            if (ps1.Length==0 ||  ps2.Length==0) return null;
+            var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0], cameraCVs[0].matrixCS);
+            var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1], cameraCVs[0].matrixCS * R);
+
+            var ps_comp = new List< Point3d_GL>();
+            for (int i = 0; i < lines1.Length; i++)
+            {
+                for (int j = 0; j < lines2.Length; j++)
+                {
+                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j]);
+                    Console.Write(p3d.ToString()+ "; ");
+                    ps_comp.Add( p3d);
+                    //ps_comp[i].ind = ind_main;
+                   // ps_comp[i].ind_sec = i;
+                }
+            }
+            Console.WriteLine("");
+            return ps_comp.ToArray();
         }
         public Point3d_GL[] comp_points_3d_3cam(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2, System.Drawing.PointF[] ps3, int ind_main = 0)
         {

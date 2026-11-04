@@ -18,6 +18,7 @@ using Emgu.CV.Dnn;
 using Accord.Math;
 using System.Reflection;
 
+
 namespace opengl3
 {
 
@@ -728,12 +729,27 @@ namespace opengl3
         int cam2_ind = 1;
         int cams_num = 2;
         readonly object mat_lock = new object();
+        TCPserver _TCPserver1;
+        Thread server_thread1;
+        StereoCamera stereo_cam;
         public NavigVision()
         {
             for (int i = 0; i < mat_global.Length; i++) mat_global[i] = new Mat();
 
+            var conf1 = "cam1_cam_cal041126a.txt";
+            var conf2 = "cam2_cam_cal041126a.txt";
+            Console.WriteLine("loadScanner");
+            var cam1 = CameraCV.load_camera(conf1);
+            var cam2 = CameraCV.load_camera(conf2);
+            Console.WriteLine("load_camera");
+
+            stereo_cam = new StereoCamera(new CameraCV[] { cam1, cam2 });
+
+            var stereo_cal_1 = "cam_cal041126a";
+            var frms_stereo = FrameLoader.loadImages_stereoCV(@"cam1\" + stereo_cal_1, @"cam2\" + stereo_cal_1,  FrameType.Pattern, false);
+            stereo_cam.calibrate_stereo(frms_stereo,PatternType.Mesh,chess_size,markSize);
         }
-        private void videoStart_sam(int number, int num_imb = -1)
+        private void videoStart(int number, int num_imb = -1)
         {
             var capture = new VideoCapture(number, VideoCapture.API.DShow);
 
@@ -753,11 +769,11 @@ namespace opengl3
             //capture.SetCaptureProperty(CapProp.Contrast, 30);
             camera_ind_ptr[num_vid] = capture.Ptr;
 
-            capture.ImageGrabbed += capturingVideo_sam;
+            capture.ImageGrabbed += capturingVideo;
             capture.Start();
         }
 
-        void drawCameras_sam(VideoCapture cap)
+        void drawCameras(VideoCapture cap)
         {
             int ind_cam = Array.IndexOf(camera_ind_ptr, cap.Ptr);
             if (ind_cam < 0 || ind_cam >= cams_num) return;
@@ -772,50 +788,103 @@ namespace opengl3
             }
 
         }
-        void capturingVideo_sam(object sender, EventArgs e)
+        Size chess_size = new Size(11,8);
+        float markSize = 18.37f;
+        void capturingVideo(object sender, EventArgs e)
         {
-            drawCameras_sam((VideoCapture)sender);
+            drawCameras((VideoCapture)sender);
+        }
+        void calib_cam()
+        {
+            var frms_1 = FrameLoader.loadImages_diff(@"cam1\cam_cal041126a", FrameType.Pattern, PatternType.Mesh);//
+            var cam1 = new CameraCV(frms_1, chess_size, markSize, null);
+            cam1.save_camera("cam1_cam_cal041126a.txt");
         }
         private void con_navig_sys()
         {
 
-            videoStart_sam(cam1_ind, 0);
-            videoStart_sam(cam2_ind, 1);
+           // calib_cam();
+
+            videoStart(cam1_ind, 0);
+            videoStart(cam2_ind, 1);
             System.Timers.Timer timer = new System.Timers.Timer(10);
-            
+
+            _TCPserver1 = new TCPserver(62000);
+            server_thread1 = new Thread(_TCPserver1.startServer);
+            server_thread1.Start();
+
         }
+        string cur_save_fold = "cam_cal041126a";
+        int glob_im_coubter = 0;
         public void Run()
         {
             con_navig_sys();
+            var mats = new Mat[cams_num];
+            var mats_show = new Mat[cams_num];
+            var mats_find = new Mat[cams_num];
             for (int i = 0; i < cams_num; i++)
+            {
                 CvInvoke.NamedWindow("cam" + i);
-
+                mats[i] = new Mat();
+                mats_show[i] = new Mat();
+                mats_find[i] = new Mat();
+            }
+                
+            
             while (true)
             {
+                var ps_all_2d = new System.Drawing.PointF[cams_num][];
                 for (int i = 0; i < cams_num; i++)
                 {
                     Mat? show = null;
                     lock (mat_lock)
                     {
-                        if (!mat_global[i].IsEmpty) show = mat_global[i].Clone();
+                        if (!mat_global[i].IsEmpty) mats_show[i] = mat_global[i].Clone();
                     }
+
                     if (show != null)
                     {
-                        CvInvoke.Imshow("cam" + i, show);   // ← вот здесь
-                        show.Dispose();
+                        mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
                     }
                 }
-                if (CvInvoke.WaitKey(10) == 27) break;  // Esc — выход
+                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
+
+                
+                //find 3d ps
+
+                //find_scene
+
+                for (int i = 0; i < cams_num; i++)
+                {
+                    if (mats_find[i] != null && !mats_find[i].IsEmpty)
+                    {
+                        CvInvoke.Imshow("cam" + i, mats_find[i]);
+                        mats[i] = mats_show[i].Clone();
+                        mats_show[i].Dispose();
+                    }
+                }
+
+                //send
+                int key = CvInvoke.WaitKey(10);
+                if (key == 's')
+                {
+                    UtilOpenCV.saveImage(mats[0], mats[1], glob_im_coubter.ToString(), cur_save_fold);
+                    glob_im_coubter++;
+                }
+                if (key == 27) break;  // Esc — выход
             }
 
             foreach (var c in videoCaptures) { c?.Stop(); c?.Dispose(); }
             CvInvoke.DestroyAllWindows();
         }
+
+
         private void timer_navig_processing_Tick(object sender, EventArgs e)
         {
             //var ps3d = navig_system.navigation_processing_get_points3d_3cam(navig_system.points2d_cams[0], navig_system.points2d_cams[1], navig_system.points2d_cams[2]);    //navyg_sys_info(camera_only)
             //navig_system.navigation_processing_get_scene(ps3d, true);
         }
+
     }
 
 }

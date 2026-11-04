@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 
-namespace tcp_to_udp
+namespace opengl3
 {
     class TCPclient
     {

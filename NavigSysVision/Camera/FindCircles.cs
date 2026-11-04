@@ -528,8 +528,8 @@ namespace opengl3
             if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, im_tr, ColorConversion.Bgr2Gray);
             else im_tr = mat;
 
-            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(9, 9), -1);
-            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 9, 9);
+            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(9, 9), -1);//9
+            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv,9, 9);//9
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
             Mat hier = new Mat();
@@ -645,6 +645,65 @@ namespace opengl3
 
                 return orig;
             }
+        }
+
+
+        public static Mat findCircles_v3(Mat mat, ref System.Drawing.PointF[] corn, Size pattern_size, bool order = true)
+        {
+            var im_tr = new Mat();
+            var orig = new Mat();
+            bool debug = false;
+            if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, im_tr, ColorConversion.Bgr2Gray);
+            else im_tr = mat;
+
+            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(3, 3), -1);
+            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
+
+            VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
+            Mat hier = new Mat();
+            CvInvoke.FindContours(im_tr, contours, hier, RetrType.Ccomp, ChainApproxMethod.ChainApproxSimple);
+
+            var contours_comp = ContourCV.contourCVs(contours);
+            ContourCV.comp_cents(ref contours_comp);
+            contours_comp = ContourCV.size_filter(contours_comp, 10, 3500);
+            contours_comp = ContourCV.figure_filter(contours_comp, 45, 85);
+            contours_comp = ContourCV.only_same_centres(contours_comp, 3);
+            var contours_comp_filtr = ContourCV.sameContours(contours_comp);
+            contours_comp_filtr = ContourCV.filter_same_centres(contours_comp_filtr, 3);
+
+
+            CvInvoke.CvtColor(im_tr, im_tr, ColorConversion.Gray2Bgr);
+            var conts = ContourCV.get_conts(contours_comp);
+            var conts_all = ContourCV.get_conts(contours_comp_filtr);
+            var cents = ContourCV.get_centres(contours_comp_filtr);//_filtr
+            if (conts_all != null)
+            {
+                CvInvoke.DrawContours(im_tr, conts_all, -1, new MCvScalar(0, 255, 0), 1, LineType.EightConnected);
+                CvInvoke.DrawContours(im_tr, conts, -1, new MCvScalar(255, 0, 0), 1, LineType.EightConnected);
+            }
+
+
+            //counter++;
+
+            if (cents == null)
+            {
+
+               // Console.WriteLine("find_circ ret null");
+                return im_tr;
+            }
+
+
+            //prin.t(cents);
+            //prin.t("____________");
+            orig = UtilOpenCV.drawPointsF(im_tr, cents, 255, 0, 0);
+            if (debug)
+            {
+                CvInvoke.Imshow("fnd", orig);
+                CvInvoke.WaitKey();
+            }
+            corn = cents;
+            return orig;
+            
         }
         static public VectorOfVectorOfPoint filter_same_centres(VectorOfVectorOfPoint contours, double dist_same = 10)
         {
