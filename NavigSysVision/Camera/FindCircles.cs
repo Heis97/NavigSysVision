@@ -656,7 +656,7 @@ namespace opengl3
             if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, im_tr, ColorConversion.Bgr2Gray);
             else im_tr = mat;
 
-            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(3, 3), -1);
+            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(5, 5), -1);
             CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();

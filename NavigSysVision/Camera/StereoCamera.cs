@@ -124,14 +124,18 @@ namespace opengl3
             {
                 for (int j = 0; j < lines2.Length; j++)
                 {
-                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j]);
-                    Console.Write(p3d.ToString()+ "; ");
-                    ps_comp.Add( p3d);
+                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],1);
+                    //Console.Write(p3d.ToString()+ "; ");
+                    if(p3d.exist)
+                    {
+                        ps_comp.Add(p3d);
+                    }
+                   
                     //ps_comp[i].ind = ind_main;
                    // ps_comp[i].ind_sec = i;
                 }
             }
-            Console.WriteLine("");
+            //Console.WriteLine("");
             return ps_comp.ToArray();
         }
         public Point3d_GL[] comp_points_3d_3cam(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2, System.Drawing.PointF[] ps3, int ind_main = 0)

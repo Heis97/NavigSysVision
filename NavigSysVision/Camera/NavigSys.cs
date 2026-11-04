@@ -816,6 +816,16 @@ namespace opengl3
         }
         string cur_save_fold = "cam_cal041126a";
         int glob_im_coubter = 0;
+
+        
+        void find_scene(Point3d_GL[] ps3d)
+        {
+            if (ps3d == null) return;
+            if(ps3d.Length <2) return;
+            //Console.Write(ps3d[1]+" "+ps3d[0]+" |||");
+            Console.WriteLine((ps3d[1]-ps3d[0]).magnitude());
+        }
+
         public void Run()
         {
             con_navig_sys();
@@ -849,17 +859,26 @@ namespace opengl3
                     if (has_frame)
                         mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
                 }
-                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1],1);
-
-                var cs0 = stereo_cam.cameraCVs[0].matrixCS;
-                var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
-                var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
-
-                UtilOpenCV.drawPointsF(mats_find[0], pr0, 255, 0, 0,3,true);
-                UtilOpenCV.drawPointsF(mats_find[1], pr1, 255, 0, 0, 3, true);
-                //find 3d ps
+                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
 
                 //find_scene
+
+                find_scene(ps3d);
+
+                if (ps3d != null && ps3d.Length > 0 && stereo_cam.R != null)
+                {
+                    var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+                    var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
+                    var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
+                    if (pr0.Length > 0) UtilOpenCV.drawPointsF(mats_find[0], pr0, 255, 0, 0, 3, true);
+                    if (pr1.Length > 0) UtilOpenCV.drawPointsF(mats_find[1], pr1, 255, 0, 0, 3, true);
+                   
+                }
+
+              
+                
+
+
 
                 for (int i = 0; i < cams_num; i++)
                 {

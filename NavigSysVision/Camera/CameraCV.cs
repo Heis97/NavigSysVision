@@ -319,6 +319,10 @@ namespace opengl3
 
         public System.Drawing.PointF[] project_world(Point3d_GL[] ps, Matrix<double> cam_to_world)
         {
+            if (ps == null || cam_to_world == null) return Array.Empty<System.Drawing.PointF>();
+            var valid = ps.Where(p => p.exist).ToArray();
+            if (valid.Length == 0) return Array.Empty<System.Drawing.PointF>();
+
             var w2c = new Matrix<double>(4, 4);
             CvInvoke.Invert(cam_to_world, w2c, DecompMethod.LU);
 
@@ -326,7 +330,7 @@ namespace opengl3
             var rvec = new Mat(); CvInvoke.Rodrigues(rot, rvec);
             var tvec = new Matrix<double>(new[] { w2c[0, 3], w2c[1, 3], w2c[2, 3] });
 
-            var obj = ps.Select(p => new MCvPoint3D32f((float)p.x, (float)p.y, (float)p.z)).ToArray();
+            var obj = valid.Select(p => new MCvPoint3D32f((float)p.x, (float)p.y, (float)p.z)).ToArray();
             return CvInvoke.ProjectPoints(obj, rvec, tvec, cameramatrix, distortmatrix);
         }
 
