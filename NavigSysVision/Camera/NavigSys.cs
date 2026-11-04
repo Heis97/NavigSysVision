@@ -836,20 +836,27 @@ namespace opengl3
                 var ps_all_2d = new System.Drawing.PointF[cams_num][];
                 for (int i = 0; i < cams_num; i++)
                 {
-                    Mat? show = null;
+                    bool has_frame = false;
                     lock (mat_lock)
                     {
-                        if (!mat_global[i].IsEmpty) mats_show[i] = mat_global[i].Clone();
+                        if (!mat_global[i].IsEmpty)
+                        {
+                            mats_show[i].Dispose();
+                            mats_show[i] = mat_global[i].Clone();
+                            has_frame = true;
+                        }
                     }
-
-                    if (show != null)
-                    {
+                    if (has_frame)
                         mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
-                    }
                 }
-                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
+                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1],1);
 
-                
+                var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+                var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
+                var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
+
+                UtilOpenCV.drawPointsF(mats_find[0], pr0, 255, 0, 0,3,true);
+                UtilOpenCV.drawPointsF(mats_find[1], pr1, 255, 0, 0, 3, true);
                 //find 3d ps
 
                 //find_scene
@@ -860,7 +867,7 @@ namespace opengl3
                     {
                         CvInvoke.Imshow("cam" + i, mats_find[i]);
                         mats[i] = mats_show[i].Clone();
-                        mats_show[i].Dispose();
+                       // mats_show[i].Dispose();
                     }
                 }
 

@@ -311,9 +311,25 @@ namespace opengl3
         }
         public Point3d_GL point3DfromCam(PointF _p)
         {
-            var p =  (cameramatrix_opt_inv * new Point3d_GL(_p.X, _p.Y, 1));
-            return p;
+            using var src = new VectorOfPointF(new[] { new System.Drawing.PointF(_p.X, _p.Y) });
+            using var dst = new VectorOfPointF();
+            CvInvoke.UndistortPoints(src, dst, cameramatrix, distortmatrix); // исходная матрица, не _opt
+            return new Point3d_GL(dst[0].X, dst[0].Y, 1);
         }
+
+        public System.Drawing.PointF[] project_world(Point3d_GL[] ps, Matrix<double> cam_to_world)
+        {
+            var w2c = new Matrix<double>(4, 4);
+            CvInvoke.Invert(cam_to_world, w2c, DecompMethod.LU);
+
+            var rot = w2c.GetSubRect(new Rectangle(0, 0, 3, 3)).Clone();
+            var rvec = new Mat(); CvInvoke.Rodrigues(rot, rvec);
+            var tvec = new Matrix<double>(new[] { w2c[0, 3], w2c[1, 3], w2c[2, 3] });
+
+            var obj = ps.Select(p => new MCvPoint3D32f((float)p.x, (float)p.y, (float)p.z)).ToArray();
+            return CvInvoke.ProjectPoints(obj, rvec, tvec, cameramatrix, distortmatrix);
+        }
+
         public PointF point2DfromCam(Point3d_GL _p)//_opt
         {
             if(_p.z==0) return new PointF(0,0);
