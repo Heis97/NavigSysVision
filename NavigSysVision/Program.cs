@@ -7,6 +7,7 @@ namespace opengl3
         static void Main(string[] args)
         {
             var navig_vis = new NavigVision();
+            navig_vis.Run();
 
         }
     }

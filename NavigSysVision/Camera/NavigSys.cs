@@ -727,8 +727,10 @@ namespace opengl3
         int cam1_ind = 0;
         int cam2_ind = 1;
         int cams_num = 2;
+        readonly object mat_lock = new object();
         public NavigVision()
         {
+            for (int i = 0; i < mat_global.Length; i++) mat_global[i] = new Mat();
 
         }
         private void videoStart_sam(int number, int num_imb = -1)
@@ -757,22 +759,16 @@ namespace opengl3
 
         void drawCameras_sam(VideoCapture cap)
         {
-            //Console.WriteLine("dr_cam");
-            var ind_cam = camera_ind_ptr.IndexOf(cap.Ptr);
-            if (ind_cam < 10 && ind_cam >= 0)
-            {
-                cap.Retrieve(mat_global[ind_cam]);
-                for (int i = 0; i < cams_num; i++)
-                {
-                    if (ind_cam == 0)
-                    {
-                        //if (NavigSys.cam_numbers == 3)
-                        {
-                           // navig_system.points2d_cams[i] = navig_system.navigation_processing_get_points2d(ref mat_global[ind_cam], ind_cam);
-                        }
+            int ind_cam = Array.IndexOf(camera_ind_ptr, cap.Ptr);
+            if (ind_cam < 0 || ind_cam >= cams_num) return;
 
-                    }
-                }
+            var frame = new Mat();
+            if (!cap.Retrieve(frame) || frame.IsEmpty) { frame.Dispose(); return; }
+
+            lock (mat_lock)
+            {
+                mat_global[ind_cam].Dispose();
+                mat_global[ind_cam] = frame;
             }
 
         }
@@ -788,7 +784,33 @@ namespace opengl3
             System.Timers.Timer timer = new System.Timers.Timer(10);
             
         }
+        public void Run()
+        {
+            con_navig_sys();
+            for (int i = 0; i < cams_num; i++)
+                CvInvoke.NamedWindow("cam" + i);
 
+            while (true)
+            {
+                for (int i = 0; i < cams_num; i++)
+                {
+                    Mat? show = null;
+                    lock (mat_lock)
+                    {
+                        if (!mat_global[i].IsEmpty) show = mat_global[i].Clone();
+                    }
+                    if (show != null)
+                    {
+                        CvInvoke.Imshow("cam" + i, show);   // ← вот здесь
+                        show.Dispose();
+                    }
+                }
+                if (CvInvoke.WaitKey(10) == 27) break;  // Esc — выход
+            }
+
+            foreach (var c in videoCaptures) { c?.Stop(); c?.Dispose(); }
+            CvInvoke.DestroyAllWindows();
+        }
         private void timer_navig_processing_Tick(object sender, EventArgs e)
         {
             //var ps3d = navig_system.navigation_processing_get_points3d_3cam(navig_system.points2d_cams[0], navig_system.points2d_cams[1], navig_system.points2d_cams[2]);    //navyg_sys_info(camera_only)
