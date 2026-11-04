@@ -15,6 +15,8 @@ using System.Text.Json;
 
 
 using Emgu.CV.Dnn;
+using Accord.Math;
+using System.Reflection;
 
 namespace opengl3
 {
@@ -718,12 +720,80 @@ namespace opengl3
 
     public class NavigVision
     {
+        VideoCapture[] videoCaptures = new VideoCapture[4];
+        volatile IntPtr[] camera_ind_ptr = new IntPtr[] { (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0 };
+        private Size cameraSize = new Size(1280, 720);
+        volatile Mat[] mat_global = new Mat[6];
+        int cam1_ind = 0;
+        int cam2_ind = 1;
+        int cams_num = 2;
         public NavigVision()
         {
 
         }
+        private void videoStart_sam(int number, int num_imb = -1)
+        {
+            var capture = new VideoCapture(number, VideoCapture.API.DShow);
 
+            var num_vid = num_imb;
+            if (num_vid < 0) num_vid = number;
+            videoCaptures[num_vid] = capture;
+            capture.Set(CapProp.FrameWidth, cameraSize.Width);
+            capture.Set(CapProp.FrameHeight, cameraSize.Height);
+            capture.Set(CapProp.Exposure, -7);
+            capture.Set(CapProp.FourCC, VideoWriter.Fourcc('M', 'J', 'P', 'G'));
+            //capture.Set(CapProp.Fps, 30);
+            cameraSize.Width = (int)capture.Get(CapProp.FrameWidth);
+            cameraSize.Height = (int)capture.Get(CapProp.FrameHeight);
+            //videoCaptures[scanner_config.Cam1_ind]?.Set(CapProp.AutoExposure, 1);
+            var fps = capture.Get(CapProp.Fps);
+            Console.WriteLine("number: " + number + "; num_vid: " + num_vid + "; " + cameraSize.Width.ToString() + " " + cameraSize.Height.ToString() + " " + fps);
+            //capture.SetCaptureProperty(CapProp.Contrast, 30);
+            camera_ind_ptr[num_vid] = capture.Ptr;
 
+            capture.ImageGrabbed += capturingVideo_sam;
+            capture.Start();
+        }
+
+        void drawCameras_sam(VideoCapture cap)
+        {
+            //Console.WriteLine("dr_cam");
+            var ind_cam = camera_ind_ptr.IndexOf(cap.Ptr);
+            if (ind_cam < 10 && ind_cam >= 0)
+            {
+                cap.Retrieve(mat_global[ind_cam]);
+                for (int i = 0; i < cams_num; i++)
+                {
+                    if (ind_cam == 0)
+                    {
+                        //if (NavigSys.cam_numbers == 3)
+                        {
+                           // navig_system.points2d_cams[i] = navig_system.navigation_processing_get_points2d(ref mat_global[ind_cam], ind_cam);
+                        }
+
+                    }
+                }
+            }
+
+        }
+        void capturingVideo_sam(object sender, EventArgs e)
+        {
+            drawCameras_sam((VideoCapture)sender);
+        }
+        private void con_navig_sys()
+        {
+
+            videoStart_sam(cam1_ind, 0);
+            videoStart_sam(cam2_ind, 1);
+            System.Timers.Timer timer = new System.Timers.Timer(10);
+            
+        }
+
+        private void timer_navig_processing_Tick(object sender, EventArgs e)
+        {
+            //var ps3d = navig_system.navigation_processing_get_points3d_3cam(navig_system.points2d_cams[0], navig_system.points2d_cams[1], navig_system.points2d_cams[2]);    //navyg_sys_info(camera_only)
+            //navig_system.navigation_processing_get_scene(ps3d, true);
+        }
     }
 
 }
