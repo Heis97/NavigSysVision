@@ -33,7 +33,15 @@ namespace opengl3
             ind_sec = _ind_sec;
         }
 
-
+        public static Point3d_GL[] ToLocal(Point3d_GL[] ps)
+        {
+            var o = ps[0];
+            var vx = (ps[1] - o).normalize();
+            var vz = (vx | (ps[2] - o)).normalize();   // | — векторное произведение
+            var vy = (vz | vx).normalize();
+            return ps.Select(p => { var d = p - o; return new Point3d_GL(d * vx, d * vy, d * vz); })
+                     .ToArray();                       // * — скалярное произведение
+        }
         public Point3d_GL toDegree()
         {
             x = x * 180 / Math.PI;
