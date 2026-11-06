@@ -118,8 +118,9 @@ namespace opengl3
             if (ps1.Length==0 ||  ps2.Length==0) return null;
 
             //Console.Write("ps1.Length: " + ps1.Length + "; ps1.Length: " + ps2.Length);
-            var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0]);
-            var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1],  R);
+            var cs0 = new Matrix<double>(new double[4, 4] { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 } });
+            var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0], cs0);
+            var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1], cs0 *R);
 
             var ps_comp = new List< Point3d_GL>();
             for (int i = 0; i < lines1.Length; i++)

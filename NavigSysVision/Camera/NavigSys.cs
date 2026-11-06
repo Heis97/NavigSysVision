@@ -437,7 +437,7 @@ namespace opengl3
         {
             if (ps3d != null && ps3d.Length > 0 && stereo_cam.R != null)
             {
-                var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+                var cs0 = new Matrix<double>(new double[4, 4] { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 } });
                 var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
                 var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
                 if (pr0.Length > 0) UtilOpenCV.drawPointsF(mats_find[0], pr0, r, g, b, size, text);
@@ -452,7 +452,7 @@ namespace opengl3
                        new Point3d_GL(0, len, 0), new Point3d_GL(0, 0, len) }
                        .Select(p => ToolDef.Transform(M, p)).ToArray();
 
-            var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+            var cs0 = new Matrix<double>(new double[4, 4] { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 } });
             var pr = new[] { stereo_cam.cameraCVs[0].project_world(axes, cs0),
                      stereo_cam.cameraCVs[1].project_world(axes, cs0 * stereo_cam.R) };
             var col = new[] { new MCvScalar(0, 0, 255), new MCvScalar(0, 255, 0), new MCvScalar(255, 0, 0) }; // X красная, Y зелёная, Z синяя (BGR)
