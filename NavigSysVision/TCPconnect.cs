@@ -277,6 +277,7 @@ namespace opengl3
                 //handle();
                 Console.WriteLine("wait");
                 TcpClient client = _server.AcceptTcpClient();
+                client.NoDelay = true;
                 Console.WriteLine("client connected");
                 //buffer_out = "";
                 //connected = true;

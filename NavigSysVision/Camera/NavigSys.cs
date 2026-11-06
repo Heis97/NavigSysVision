@@ -20,6 +20,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Accord.Statistics;
+using System.Text;
 
 namespace opengl3
 {
@@ -41,6 +42,48 @@ namespace opengl3
 
 
         Matrix<double> matrix_frame = null;
+
+        public Matrix<double> FitPose(Point3d_GL[] measured, out double rms)
+        {
+            var l = Local; int n = l.Length;
+            var cl = new Point3d_GL(); var cw = new Point3d_GL();
+            for (int k = 0; k < n; k++) { cl = cl + l[k]; cw = cw + measured[k]; }
+            cl = cl / n; cw = cw / n;
+
+            var H = new Matrix<double>(3, 3);
+            for (int k = 0; k < n; k++)
+            {
+                var a = l[k] - cl; var b = measured[k] - cw;
+                double[] av = { a.x, a.y, a.z }, bv = { b.x, b.y, b.z };
+                for (int r = 0; r < 3; r++) for (int c = 0; c < 3; c++) H[r, c] += av[r] * bv[c];
+            }
+
+            var S = new Matrix<double>(3, 1); var U = new Matrix<double>(3, 3); var Vt = new Matrix<double>(3, 3);
+            CvInvoke.SVDecomp(H, S, U, Vt, SvdFlag.Default);
+            var R = Vt.Transpose() * U.Transpose();
+            if (CvInvoke.Determinant(R) < 0)                 // защита от зеркального решения
+            {
+                for (int c = 0; c < 3; c++) Vt[2, c] *= -1;
+                R = Vt.Transpose() * U.Transpose();
+            }
+
+            var M = UtilMatr.eye_matr(4);
+            for (int r = 0; r < 3; r++)
+            {
+                for (int c = 0; c < 3; c++) M[r, c] = R[r, c];
+                M[r, 3] = (r == 0 ? cw.x : r == 1 ? cw.y : cw.z)
+                        - (R[r, 0] * cl.x + R[r, 1] * cl.y + R[r, 2] * cl.z);
+            }
+
+            double s = 0;
+            for (int k = 0; k < n; k++) s += Math.Pow((Transform(M, l[k]) - measured[k]).magnitude(), 2);
+            rms = Math.Sqrt(s / n);
+            return M;
+        }
+        public static Point3d_GL Transform(Matrix<double> M, Point3d_GL p) => new Point3d_GL(
+            M[0, 0] * p.x + M[0, 1] * p.y + M[0, 2] * p.z + M[0, 3],
+            M[1, 0] * p.x + M[1, 1] * p.y + M[1, 2] * p.z + M[1, 3],
+            M[2, 0] * p.x + M[2, 1] * p.y + M[2, 2] * p.z + M[2, 3]);
         public void comp_charachter_dists()
         {
             if (Local == null) return;
@@ -319,8 +362,28 @@ namespace opengl3
                 }
 
                 var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
+                var msg = new StringBuilder();
 
-                //draw_3d_ps(ps3d, ref mats_find,0, 255,0, 3,false);
+                foreach (var tool in navig_tools.Tools)
+                {
+                    var meas = (ps3d != null && ps3d.Length >= 3) ? tool.find_tool(ps3d) : null;
+                    Matrix<double>? M = null; double rms = -1;
+                    if (meas != null)
+                    {
+                        M = tool.FitPose(meas, out rms);
+                        if (rms > tool.Err) M = null;      // точки сопоставлены неверно — инструмент не принимаем
+                    }
+
+                    if (M != null)
+                    {
+                        draw_3d_ps(meas, ref mats_find, 255, 0, 0, 2);
+                        draw_tool_frame(M, mats_find, tool.Ind);
+                    }
+                    msg.Append(PoseLine(frame_id, tool.Ind, M, rms));
+                }
+
+                if (_TCPserver1.connected) _TCPserver1.pushBuffer(msg.ToString());
+                frame_id++;
 
                 var ps_all = find_scene(ps3d, navig_tools);
                 if (ps_all != null)
@@ -355,7 +418,18 @@ namespace opengl3
             foreach (var c in videoCaptures) { c?.Stop(); c?.Dispose(); }
             CvInvoke.DestroyAllWindows();
         }
+        long frame_id = 0;   // поле класса
 
+        static string PoseLine(long frame, int ind, Matrix<double>? M, double rms)
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            if (M == null) return $"P;{frame};{ind};0\n";                 // инструмент не виден
+            var sb = new StringBuilder($"P;{frame};{ind};1;{rms.ToString("F3", ci)}");
+            for (int r = 0; r < 3; r++)
+                for (int c = 0; c < 4; c++)
+                    sb.Append(';').Append(M[r, c].ToString(r < 3 && c < 3 ? "F6" : "F3", ci));
+            return sb.Append('\n').ToString();
+        }
         void draw_3d_ps(Point3d_GL[] ps3d, ref Mat[] mats_find, int r, int g, int b,int size, bool text = true)
         {
             if (ps3d != null && ps3d.Length > 0 && stereo_cam.R != null)
@@ -368,7 +442,27 @@ namespace opengl3
 
             }
         }
+        void draw_tool_frame(Matrix<double> M, Mat[] mats, int ind, double len = 40)
+        {
+            if (stereo_cam.R == null) return;
+            var axes = new[] { new Point3d_GL(0, 0, 0), new Point3d_GL(len, 0, 0),
+                       new Point3d_GL(0, len, 0), new Point3d_GL(0, 0, len) }
+                       .Select(p => ToolDef.Transform(M, p)).ToArray();
 
+            var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+            var pr = new[] { stereo_cam.cameraCVs[0].project_world(axes, cs0),
+                     stereo_cam.cameraCVs[1].project_world(axes, cs0 * stereo_cam.R) };
+            var col = new[] { new MCvScalar(0, 0, 255), new MCvScalar(0, 255, 0), new MCvScalar(255, 0, 0) }; // X красная, Y зелёная, Z синяя (BGR)
+
+            for (int i = 0; i < 2; i++)
+            {
+                if (pr[i].Length < 4 || mats[i] == null || mats[i].IsEmpty) continue;
+                var o = Point.Round(pr[i][0]);
+                for (int a = 1; a <= 3; a++) CvInvoke.Line(mats[i], o, Point.Round(pr[i][a]), col[a - 1], 2);
+                CvInvoke.PutText(mats[i], "T" + ind, new Point(o.X + 6, o.Y - 6),
+                                 FontFace.HersheySimplex, 0.6, new MCvScalar(255, 255, 0), 2);
+            }
+        }
         private void timer_navig_processing_Tick(object sender, EventArgs e)
         {
             //var ps3d = navig_system.navigation_processing_get_points3d_3cam(navig_system.points2d_cams[0], navig_system.points2d_cams[1], navig_system.points2d_cams[2]);    //navyg_sys_info(camera_only)
