@@ -19,6 +19,7 @@ using Accord.Math;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Accord.Statistics;
 
 namespace opengl3
 {
@@ -28,11 +29,93 @@ namespace opengl3
     public class ToolDef
     {
         [JsonPropertyName("ind")] public int Ind { get; set; }
+        [JsonPropertyName("err")] public double Err { get; set; }
         [JsonPropertyName("points")] public double[][] Points { get; set; } = Array.Empty<double[]>();
 
         [JsonIgnore]
         public Point3d_GL[] Local =>
             Points.Select(p => new Point3d_GL(p[0], p[1], p[2])).ToArray();
+
+        
+        double[] dists = new double[1];
+
+
+        Matrix<double> matrix_frame = null;
+        public void comp_charachter_dists()
+        {
+            if (Local == null) return;
+            if (Local.Length <2) return;
+
+            dists = new double[Local.Length-1];
+            for(int i = 0; i < dists.Length; i++)
+            {
+                dists[i] = (Local[i] - Local[Local.Length - 1]).magnitude();
+            }
+        }
+        public Point3d_GL[] find_tool(Point3d_GL[] ps)
+        {
+            if (ps.Length < Local.Length) return null;
+            var ps_out = new Point3d_GL[dists.Length+1];
+            int ind_main_p = -1;
+            for(int i = 0; i < ps.Length; i++)
+            {
+                var cur_dists = new double[ps.Length];
+                Array.Fill(cur_dists, -1);
+
+                bool one_dist_have = false;
+                for (int j = 0; j < ps.Length; j++)
+                {
+                    if(i!=j)
+                    {
+                        cur_dists[j] = (ps[j] - ps[i]).magnitude();
+
+                        if(Math.Abs(cur_dists[j] - dists[0]) < Err)
+                        {
+                            one_dist_have = true;
+                        }
+                    }
+                }
+
+                if(one_dist_have)
+                {
+                    ind_main_p = i;
+                    var dist_have = new int[dists.Length];
+                    Array.Fill(dist_have, -1);
+
+                    for (int j = 0; j < cur_dists.Length; j++)
+                    {
+                        for (int k = 0; k < dists.Length; k++)
+                        {
+                            if (Math.Abs(cur_dists[j] - dists[k]) < Err && cur_dists[j]>0)
+                            {
+                                dist_have[k] = j;
+                            }
+                        }
+                    }
+
+                    var all_dist_have = true;
+                    for (int k = 0; k < dists.Length; k++)
+                    {
+                        
+                        if( dist_have[k]>=0)
+                        {
+                            ps_out[k] = ps[dist_have[k]];
+                        }
+                        else
+                        {
+                            all_dist_have = false;
+                        }
+                    }
+                    if(all_dist_have)
+                    {
+                        ps_out[ps_out.Length-1] = ps[ind_main_p];
+                        return ps_out;
+                    }
+                }
+            }
+
+            return null;
+        }
     }
 
     public class ToolLibrary
@@ -44,8 +127,12 @@ namespace opengl3
         public static ToolLibrary Load(string path)
         {
             var lib = JsonSerializer.Deserialize<ToolLibrary>(File.ReadAllText(path), opts)!;
-            foreach (var t in lib.Tools)                        
+            foreach (var t in lib.Tools)
+            {
                 t.Points = ToArr(Point3d_GL.ToLocal(t.Local));
+                t.comp_charachter_dists();
+            }
+                
             return lib;
         }
 
@@ -53,6 +140,18 @@ namespace opengl3
 
         public static double[][] ToArr(Point3d_GL[] ps) =>
             ps.Select(p => new[] { Math.Round(p.x, 3), Math.Round(p.y, 3), Math.Round(p.z, 3) }).ToArray();
+
+        public  Point3d_GL[][] tools_ps(Point3d_GL[] ps)
+        {
+            var tools_ps_arr = new Point3d_GL[Tools.Count][];
+            for(int i = 0; i < Tools.Count; i++)
+            {
+                tools_ps_arr[i] = Tools[i].find_tool(ps);
+            }
+            return tools_ps_arr;
+        }
+
+
     }
 
     
@@ -73,17 +172,18 @@ namespace opengl3
         Thread server_thread1;
         StereoCamera stereo_cam;
 
-        ToolLibrary tools;
+        ToolLibrary navig_tools;
         public NavigVision()
         {
-            tools = new ToolLibrary();
+            navig_tools = new ToolLibrary();
             /*var tool1 = new ToolDef();
             tool1.Ind = 1;
             tool1.Points = new double[][] { new double[] { 0, 0, 0 }, new double[] { 0, 10, 0 }, new double[] { 10, 0, 0 } };
             tools.Tools.Add(tool1);
             tools.Save("tools_navig.json");*/
 
-            tools = ToolLibrary.Load("tools_navig.json");
+            navig_tools = ToolLibrary.Load("tools_navig.json");
+            navig_tools.Save("tools_navig.json");
             for (int i = 0; i < mat_global.Length; i++) mat_global[i] = new Mat();
 
             var conf1 = "cam1_cam_cal041126a.txt";
@@ -167,13 +267,16 @@ namespace opengl3
         string cur_save_fold = "cam_cal041126a";
         int glob_im_coubter = 0;
 
-        
-        void find_scene(Point3d_GL[] ps3d)
+
+        Point3d_GL[][] find_scene(Point3d_GL[] ps3d, ToolLibrary navig_tools)
         {
-            if (ps3d == null) return;
-            if(ps3d.Length <2) return;
-            //Console.Write(ps3d[1]+" "+ps3d[0]+" |||");
-            Console.WriteLine((ps3d[1]-ps3d[0]).magnitude());
+            if (ps3d == null) return null;
+            if(ps3d.Length <2) return null;
+
+            var ps_tools  = navig_tools.tools_ps(ps3d);
+
+            //find_matrixes and send
+            return ps_tools;
         }
 
         public void Run()
@@ -207,35 +310,34 @@ namespace opengl3
                         }
                     }
                     if (has_frame)
-                        mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
+                    {
+                        mats[i] = mats_show[i].Clone();
+                        //mats_find[i] = FindCircles.findCircles_v4(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
+                        FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false); mats_find[i] = mats_show[i].Clone();
+                    }
+                        
                 }
+
                 var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
 
-                //find_scene
+                //draw_3d_ps(ps3d, ref mats_find,0, 255,0, 3,false);
 
-                find_scene(ps3d);
-
-                if (ps3d != null && ps3d.Length > 0 && stereo_cam.R != null)
+                var ps_all = find_scene(ps3d, navig_tools);
+                if (ps_all != null)
                 {
-                    var cs0 = stereo_cam.cameraCVs[0].matrixCS;
-                    var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
-                    var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
-                    if (pr0.Length > 0) UtilOpenCV.drawPointsF(mats_find[0], pr0, 255, 0, 0, 3, true);
-                    if (pr1.Length > 0) UtilOpenCV.drawPointsF(mats_find[1], pr1, 255, 0, 0, 3, true);
-                   
+                    if(ps_all.Length > 0)
+                    {
+                        draw_3d_ps(ps_all[0], ref mats_find,255,0,0,2);
+                    }
                 }
-
-              
                 
-
-
-
                 for (int i = 0; i < cams_num; i++)
                 {
                     if (mats_find[i] != null && !mats_find[i].IsEmpty)
                     {
                         CvInvoke.Imshow("cam" + i, mats_find[i]);
-                        mats[i] = mats_show[i].Clone();
+                        //CvInvoke.Imshow("cam" + i, mats_show[i]);
+                       
                        // mats_show[i].Dispose();
                     }
                 }
@@ -254,6 +356,18 @@ namespace opengl3
             CvInvoke.DestroyAllWindows();
         }
 
+        void draw_3d_ps(Point3d_GL[] ps3d, ref Mat[] mats_find, int r, int g, int b,int size, bool text = true)
+        {
+            if (ps3d != null && ps3d.Length > 0 && stereo_cam.R != null)
+            {
+                var cs0 = stereo_cam.cameraCVs[0].matrixCS;
+                var pr0 = stereo_cam.cameraCVs[0].project_world(ps3d, cs0);
+                var pr1 = stereo_cam.cameraCVs[1].project_world(ps3d, cs0 * stereo_cam.R);
+                if (pr0.Length > 0) UtilOpenCV.drawPointsF(mats_find[0], pr0, r, g, b, size, text);
+                if (pr1.Length > 0) UtilOpenCV.drawPointsF(mats_find[1], pr1, r, g, b, size, text);
+
+            }
+        }
 
         private void timer_navig_processing_Tick(object sender, EventArgs e)
         {

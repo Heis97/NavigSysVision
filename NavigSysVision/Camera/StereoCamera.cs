@@ -116,6 +116,8 @@ namespace opengl3
             if (ps1 == null || ps2 == null) return null;
 
             if (ps1.Length==0 ||  ps2.Length==0) return null;
+
+            //Console.Write("ps1.Length: " + ps1.Length + "; ps1.Length: " + ps2.Length);
             var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0], cameraCVs[0].matrixCS);
             var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1], cameraCVs[0].matrixCS * R);
 
@@ -125,16 +127,14 @@ namespace opengl3
                 for (int j = 0; j < lines2.Length; j++)
                 {
                     var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],1);
-                    //Console.Write(p3d.ToString()+ "; ");
                     if(p3d.exist)
                     {
                         ps_comp.Add(p3d);
                     }
-                   
-                    //ps_comp[i].ind = ind_main;
-                   // ps_comp[i].ind_sec = i;
                 }
             }
+            //Console.WriteLine("; ps_comp.Length: " + ps_comp.Count);
+
             //Console.WriteLine("");
             return ps_comp.ToArray();
         }
@@ -223,7 +223,7 @@ namespace opengl3
             
             if (cameraCVs.Length==2)
             {
-                for (int i = 0; i < frames.Length; i++)
+                for (int i = 0; i <1; i++)
                 {
                     var pos1 = cameraCVs[0].compPos(frames[i].im, patternType, pattern_size, mark_size);
                     var pos2 = cameraCVs[1].compPos(frames[i].im_sec, patternType, pattern_size, mark_size);
