@@ -118,8 +118,8 @@ namespace opengl3
             if (ps1.Length==0 ||  ps2.Length==0) return null;
 
             //Console.Write("ps1.Length: " + ps1.Length + "; ps1.Length: " + ps2.Length);
-            var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0], cameraCVs[0].matrixCS);
-            var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1], cameraCVs[0].matrixCS * R);
+            var lines1 = computeTracesCam(PointF.toPointF(ps1), cameraCVs[0]);
+            var lines2 = computeTracesCam(PointF.toPointF(ps2), cameraCVs[1],  R);
 
             var ps_comp = new List< Point3d_GL>();
             for (int i = 0; i < lines1.Length; i++)
@@ -239,6 +239,8 @@ namespace opengl3
                         Console.WriteLine(i + " " + R[0, 3] + " " + R[1, 3] + " " + R[2, 3] + " " + " " + R[0, 2] + " " + R[1, 2] + " " + R[2, 2] + " "//
                         + c1[0, 3] + " " + c1[1, 3] + " " + c1[2, 3] + " " + c1[2, 0] + " " + c1[2, 1] + " " + c1[2, 2]) ;// ; ;
                         GC.Collect();
+
+                        
                     }
 
                     //Console.WriteLine(comp_pos);

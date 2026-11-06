@@ -241,6 +241,9 @@ namespace opengl3
             var stereo_cal_1 = "cam_cal041126a";
             var frms_stereo = FrameLoader.loadImages_stereoCV(@"cam1\" + stereo_cal_1, @"cam2\" + stereo_cal_1,  FrameType.Pattern, false);
             stereo_cam.calibrate_stereo(frms_stereo,PatternType.Mesh,chess_size,markSize);
+
+            //cs0_inv = new Matrix<double>(4, 4);
+            //CvInvoke.Invert(stereo_cam.cameraCVs[0].matrixCS, cs0_inv, DecompMethod.LU);
         }
         private void videoStart(int number, int num_imb = -1)
         {
