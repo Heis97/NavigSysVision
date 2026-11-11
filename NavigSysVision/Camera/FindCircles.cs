@@ -309,6 +309,52 @@ namespace opengl3
             }
             return mass_2;
         }
+
+        static public ContourCV[] filter_alone_ps(ContourCV[] contours)
+        {
+            var filtr_conts = new List<ContourCV>();
+
+            var min_dists = new double[contours.Length];
+
+            for(int i=0; i < contours.Length; i++)
+            {
+                min_dists[i] = double.MaxValue;
+
+                for (int j = 0; j < contours.Length; j++)
+                {
+                    if(i!=j)
+                    {
+
+                        var cur_dist = distContours(contours[i], contours[j]);
+                        if(cur_dist<min_dists[i])
+                        {
+                            min_dists[i] = cur_dist;
+                        }
+
+                    }                
+                }
+            }
+            var sort_arr = (double[])min_dists.Clone();
+            Array.Sort(sort_arr);
+            if(contours.Length>3)
+            {
+                var med_ind = (int)(contours.Length / 2);
+                var min_dist_real = sort_arr[med_ind] * 2;
+                for (int i = 0; i < min_dists.Length; i++)
+                {
+                    if (min_dists[i]<min_dist_real)
+                    {
+                        filtr_conts.Add(contours[i]);
+                    }
+                }
+
+                return filtr_conts.ToArray();
+
+            }
+
+
+            return contours;
+        }
     }
     public static class FindCircles
     {
@@ -714,7 +760,9 @@ namespace opengl3
             else im_tr = mat;
 
             CvInvoke.GaussianBlur(im_tr, im_tr, new Size(7, 7), -1);
-            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 7, 5);
+            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
+
+            //CvInvoke.Threshold(im_tr, im_tr,30,255,ThresholdType.BinaryInv);
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
             Mat hier = new Mat();
@@ -723,13 +771,17 @@ namespace opengl3
             var contours_comp = ContourCV.contourCVs(contours);
             ContourCV.comp_cents_lite(ref contours_comp);
 
-            contours_comp = ContourCV.size_filter(contours_comp,100, 1500);
+            contours_comp = ContourCV.size_filter(contours_comp,20, 1500);
             contours_comp = ContourCV.only_same_centres_v2(contours_comp, 3);
+            contours_comp = ContourCV.filter_alone_ps(contours_comp);//_filtr
+
 
             CvInvoke.CvtColor(im_tr, im_tr, ColorConversion.Gray2Bgr);
             var conts = ContourCV.get_conts(contours_comp);
 
             var cents = ContourCV.get_centres(contours_comp);//_filtr
+
+           
             if (conts != null)
             {
                 CvInvoke.DrawContours(im_tr, conts, -1, new MCvScalar(255, 0, 0), 1, LineType.EightConnected);
@@ -754,9 +806,36 @@ namespace opengl3
                 CvInvoke.Imshow("fnd", orig);
                 CvInvoke.WaitKey();
             }
-            corn = cents;
-            return orig;
-            
+            if (order)
+            {
+                corn = new System.Drawing.PointF[pattern_size.Width * pattern_size.Height];
+                UtilOpenCV.drawTours(im_tr, PointF.toPoint(cents), 255, 0, 0, 2);
+                var ps_ord = orderPoints(cents, pattern_size);
+                if (ps_ord != null && ps_ord.Length == corn.Length)
+                {
+                    corn = new System.Drawing.PointF[ps_ord.Length];
+                    ps_ord.CopyTo(corn, 0);
+                    UtilOpenCV.drawTours(im_tr, PointF.toPoint(ps_ord), 255, 0, 0, 2);
+                    UtilOpenCV.drawTours(im_tr, PointF.toPoint(new System.Drawing.PointF[] { ps_ord[0] }), 0, 255, 255, 10);
+                }
+                else
+                {
+                    if (ps_ord == null)
+                    {
+                        Console.WriteLine("else ps_ord NULL");
+                        return im_tr;
+                    }
+                }
+                return im_tr;
+            }
+            else
+            {
+                corn = cents;
+                //if (cents.Length <= corn.Length) cents.CopyTo(corn, 0);
+
+                return orig;
+            }
+
         }
 
         public static Mat findCircles_v4(Mat mat, ref System.Drawing.PointF[] corn, Size pattern_size, bool order = true)

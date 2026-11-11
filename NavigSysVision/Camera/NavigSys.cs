@@ -313,7 +313,7 @@ namespace opengl3
         string cur_save_fold = "cam_cal041126a";
         int glob_im_coubter = 0;
 
-
+        bool fon_inited = false;
         Point3d_GL[][] find_scene(Point3d_GL[] ps3d, ToolLibrary navig_tools)
         {
             if (ps3d == null) return null;
@@ -331,12 +331,14 @@ namespace opengl3
             var mats = new Mat[cams_num];
             var mats_show = new Mat[cams_num];
             var mats_find = new Mat[cams_num];
+            var mats_fon = new Mat[cams_num];
             for (int i = 0; i < cams_num; i++)
             {
                 CvInvoke.NamedWindow("cam" + i);
                 mats[i] = new Mat();
                 mats_show[i] = new Mat();
                 mats_find[i] = new Mat();
+                mats_fon[i] = new Mat();
             }
                 
             
@@ -352,19 +354,23 @@ namespace opengl3
                         {
                             mats_show[i].Dispose();
                             mats_show[i] = mat_global[i].Clone();
+                            if(fon_inited)
+                            {
+                                mats_show[i]-=mats_fon[i];
+                            }
                             has_frame = true;
                         }
                     }
                     if (has_frame)
                     {
                         mats[i] = mats_show[i].Clone();
-                        //mats_find[i] = FindCircles.findCircles_v4(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false);
-                        FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false); mats_find[i] = mats_show[i].Clone();
+                        mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], chess_size,true);
+                        //FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false); mats_find[i] = mats_show[i].Clone();
                     }
                         
                 }
 
-                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
+                /*var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
                 var msg = new StringBuilder();
 
                 foreach (var tool in navig_tools.Tools)
@@ -396,7 +402,7 @@ namespace opengl3
                         draw_3d_ps(ps_all[0], ref mats_find,255,0,0,2);
                     }
                 }
-                
+                */
                 for (int i = 0; i < cams_num; i++)
                 {
                     if (mats_find[i] != null && !mats_find[i].IsEmpty)
@@ -407,7 +413,7 @@ namespace opengl3
                        // mats_show[i].Dispose();
                     }
                 }
-
+                
                 //send
                 int key = CvInvoke.WaitKey(10);
                 if (key == 's')
@@ -415,6 +421,18 @@ namespace opengl3
                     UtilOpenCV.saveImage(mats[0], mats[1], glob_im_coubter.ToString(), cur_save_fold);
                     glob_im_coubter++;
                 }
+                /*else if (key == 'f')
+                {
+                    fon_inited = true;
+                    mats_fon[0] = mats[0].Clone();
+                    mats_fon[1] = mats[1].Clone();
+                    //UtilOpenCV.saveImage(mats[0], mats[1], glob_im_coubter.ToString(), cur_save_fold);
+
+                }
+                else if (key == 'd')
+                {
+                    fon_inited = false;
+                }*/
                 if (key == 27) break;  // Esc — выход
             }
 
