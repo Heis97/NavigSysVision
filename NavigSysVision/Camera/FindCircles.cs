@@ -20,6 +20,9 @@ namespace opengl3
         public double sumhu;
         Moments moments;
         public System.Drawing.PointF pc;
+        /// <summary>субпиксельные точки границы круга (заполняет SubPixCircle.refine), null если уточнение не удалось</summary>
+        public double[] edge_x;
+        public double[] edge_y;
         public ContourCV(VectorOfPoint cont)
         {
             area= CvInvoke.ContourArea(cont);
@@ -356,6 +359,482 @@ namespace opengl3
             return contours;
         }
     }
+    /// <summary>
+    /// Субпиксельное уточнение центров кругов.
+    /// 1) refine: от грубого центра контура пускаются лучи, на каждом ищется положение перепада яркости
+    ///    (центр тяжести пика производной профиля) на исходном, не размытом и не бинаризованном изображении;
+    ///    по найденным точкам границы методом наименьших квадратов строится эллипс, его центр - новый центр.
+    /// 2) perspective_correct: центр эллипса не совпадает с проекцией центра круга (перспективное смещение).
+    ///    Когда сетка упорядочена, точки границы переносятся гомографией на плоскость шаблона, там находится
+    ///    центр окружности и проецируется обратно в изображение.
+    /// </summary>
+    public static class SubPixCircle
+    {
+        const int N_RAYS = 72;        // число лучей
+        const double STEP = 0.5;      // шаг вдоль луча, пикс
+        const double W_IN = 2.5;      // окно поиска внутрь от грубого контура, пикс
+        const double W_OUT = 6.5;     // окно поиска наружу (кольцо адаптивного порога лежит на тёмной стороне перепада)
+        const double W_ITER = 3.0;    // окно на повторных итерациях
+        const int MAX_ITERS = 3;
+        const int MAX_SAMPLES = 24;
+        const double MAX_OUTLIER = 1.0;   // допустимое отклонение радиуса от медианы соседних лучей, пикс
+
+        static readonly double[] cosA = new double[N_RAYS];
+        static readonly double[] sinA = new double[N_RAYS];
+        static SubPixCircle()
+        {
+            for (int i = 0; i < N_RAYS; i++)
+            {
+                cosA[i] = Math.Cos(2 * Math.PI * i / N_RAYS);
+                sinA[i] = Math.Sin(2 * Math.PI * i / N_RAYS);
+            }
+        }
+
+        /// <summary>
+        /// Уточняет pc у каждого контура. Контуры, для которых уточнение не удалось, сохраняют прежний центр.
+        /// </summary>
+        /// <param name="gray">исходное 8-битное одноканальное изображение (без размытия)</param>
+        /// <returns>количество уточнённых центров</returns>
+        public static int refine(Mat gray, ContourCV[] conts)
+        {
+            if (gray == null || conts == null || conts.Length == 0) return 0;
+            if (gray.IsEmpty || gray.NumberOfChannels != 1) return 0;
+            var g = gray.GetData() as byte[,];
+            if (g == null) return 0;
+            int n_ok = 0;
+            for (int i = 0; i < conts.Length; i++)
+            {
+                if (refine_one(g, conts[i])) n_ok++;
+            }
+            return n_ok;
+        }
+
+        static double sample(byte[,] g, double x, double y)
+        {
+            int x0 = (int)x;
+            int y0 = (int)y;
+            double fx = x - x0;
+            double fy = y - y0;
+            return (g[y0, x0] * (1 - fx) + g[y0, x0 + 1] * fx) * (1 - fy)
+                 + (g[y0 + 1, x0] * (1 - fx) + g[y0 + 1, x0 + 1] * fx) * fy;
+        }
+
+        static bool refine_one(byte[,] g, ContourCV cont)
+        {
+            cont.edge_x = null;
+            cont.edge_y = null;
+            if (cont.cont_orig == null) return false;
+            int H = g.GetLength(0);
+            int W = g.GetLength(1);
+
+            var M = CvInvoke.Moments(cont.cont_orig);
+            if (M.M00 <= 0) return false;
+            double cx0 = M.M10 / M.M00;
+            double cy0 = M.M01 / M.M00;
+            // ковариация контура -> начальная форма (эллипс): радиус вдоль направления u равен 2/sqrt(u^T * S^-1 * u)
+            double a = M.M20 / M.M00 - cx0 * cx0;
+            double b = M.M11 / M.M00 - cx0 * cy0;
+            double c = M.M02 / M.M00 - cy0 * cy0;
+            double det = a * c - b * b;
+            double r_eq = Math.Sqrt(M.M00 / Math.PI);
+
+            double cx = cx0, cy = cy0;
+            var rad = new double[N_RAYS];
+            var ok = new bool[N_RAYS];
+            var t_lo = new double[N_RAYS];
+            var t_hi = new double[N_RAYS];
+            var n_s = new int[N_RAYS];
+            var prof = new double[N_RAYS, MAX_SAMPLES];
+            var d = new double[MAX_SAMPLES];
+            var peaks = new double[N_RAYS];
+            var peaks_sort = new double[N_RAYS];
+            var newr = new double[N_RAYS];
+            var got = new bool[N_RAYS];
+            var keep = new bool[N_RAYS];
+            var v = new double[5];
+            double[] ex = null, ey = null;
+
+            for (int it = 0; it < MAX_ITERS; it++)
+            {
+                double t_max = 0;
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    if (it == 0)
+                    {
+                        double q = c * cosA[i] * cosA[i] - 2 * b * cosA[i] * sinA[i] + a * sinA[i] * sinA[i];
+                        rad[i] = (det > 1e-9 && q > 1e-9) ? 2 * Math.Sqrt(det / q) : r_eq;
+                    }
+                    if (ok[i]) { t_lo[i] = rad[i] - W_ITER; t_hi[i] = rad[i] + W_ITER; }
+                    else { t_lo[i] = rad[i] - W_IN; t_hi[i] = rad[i] + W_OUT; }
+                    if (t_lo[i] < 0.5) t_lo[i] = 0.5;
+                    if (t_hi[i] > t_max) t_max = t_hi[i];
+                }
+                if (cx - t_max < 1 || cy - t_max < 1 || cx + t_max > W - 3 || cy + t_max > H - 3) return false;
+
+                // профили яркости вдоль лучей и полярность перепада (тёмный круг на светлом фоне или наоборот)
+                double pol_sum = 0;
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    int n = (int)((t_hi[i] - t_lo[i]) / STEP) + 1;
+                    if (n > MAX_SAMPLES) n = MAX_SAMPLES;
+                    n_s[i] = n;
+                    for (int k = 0; k < n; k++)
+                    {
+                        double t = t_lo[i] + k * STEP;
+                        prof[i, k] = sample(g, cx + cosA[i] * t, cy + sinA[i] * t);
+                    }
+                    pol_sum += prof[i, n - 1] - prof[i, 0];
+                }
+                double pol = pol_sum > 0 ? 1.0 : -1.0;
+
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    peaks[i] = 0;
+                    got[i] = false;
+                    int n = n_s[i];
+                    if (n < 5) continue;
+                    d[0] = 0; d[n - 1] = 0;
+                    for (int k = 1; k < n - 1; k++) d[k] = pol * (prof[i, k + 1] - prof[i, k - 1]);
+                    int km = 1;
+                    for (int k = 2; k < n - 1; k++)
+                    {
+                        if (d[k] > d[km]) km = k;
+                    }
+                    double pk = d[km];
+                    peaks[i] = pk;
+                    if (pk <= 0 || km < 2 || km > n - 3) continue;
+                    // границы пика производной
+                    int lo = km;
+                    while (lo > 1 && km - lo < 8 && d[lo - 1] > 0.1 * pk && d[lo - 1] <= d[lo]) lo--;
+                    int hi = km;
+                    while (hi < n - 2 && hi - km < 8 && d[hi + 1] > 0.1 * pk && d[hi + 1] <= d[hi]) hi++;
+                    // положение перепада = центр тяжести пика производной
+                    double sw = 0, swt = 0;
+                    for (int k = lo; k <= hi; k++)
+                    {
+                        double w = d[k] - 0.1 * pk;
+                        if (w > 0)
+                        {
+                            sw += w;
+                            swt += w * (t_lo[i] + k * STEP);
+                        }
+                    }
+                    if (sw <= 0) continue;
+                    newr[i] = swt / sw;
+                    got[i] = true;
+                }
+
+                // отбрасываем лучи со слабым перепадом (блик, перекрытие)
+                Array.Copy(peaks, peaks_sort, N_RAYS);
+                Array.Sort(peaks_sort);
+                double med = peaks_sort[N_RAYS / 2];
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    if (got[i] && peaks[i] < 0.35 * med) got[i] = false;
+                }
+                // отбрасываем выбросы: радиус сильно отличается от медианы по соседним лучам
+                int n_keep = 0;
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    keep[i] = got[i];
+                    if (!got[i]) continue;
+                    int nv = 0;
+                    for (int j = -2; j <= 2; j++)
+                    {
+                        int ii = (i + j + N_RAYS) % N_RAYS;
+                        if (got[ii]) { v[nv] = newr[ii]; nv++; }
+                    }
+                    Array.Sort(v, 0, nv);
+                    if (Math.Abs(newr[i] - v[nv / 2]) > MAX_OUTLIER) keep[i] = false;
+                    if (keep[i]) n_keep++;
+                }
+                if (n_keep < N_RAYS * 0.6) return false;
+
+                ex = new double[n_keep];
+                ey = new double[n_keep];
+                int ind = 0;
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    if (!keep[i]) continue;
+                    ex[ind] = cx + cosA[i] * newr[i];
+                    ey[ind] = cy + sinA[i] * newr[i];
+                    ind++;
+                }
+                double nx, ny;
+                if (!fit_ellipse_centre(ex, ey, out nx, out ny)) return false;
+                double shift0 = Math.Sqrt((nx - cx0) * (nx - cx0) + (ny - cy0) * (ny - cy0));
+                if (shift0 > Math.Max(1.5, 0.5 * r_eq)) return false;   // уточнение не должно далеко уводить от грубого центра
+                double mv = Math.Sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
+                for (int i = 0; i < N_RAYS; i++)
+                {
+                    ok[i] = keep[i];
+                    if (keep[i]) rad[i] = newr[i];
+                }
+                cx = nx;
+                cy = ny;
+                if (mv < 0.005) break;
+            }
+
+            cont.pc = new System.Drawing.PointF((float)cx, (float)cy);
+            cont.edge_x = ex;
+            cont.edge_y = ey;
+            return true;
+        }
+
+        /// <summary>
+        /// Поправка перспективного смещения центров для упорядоченной сетки (corn изменяется на месте).
+        /// </summary>
+        /// <returns>количество исправленных точек</returns>
+        public static int perspective_correct(System.Drawing.PointF[] corn, ContourCV[] conts, Size pattern_size)
+        {
+            if (corn == null || conts == null) return 0;
+            int n = corn.Length;
+            if (n < 9 || n != pattern_size.Width * pattern_size.Height) return 0;
+
+            // точки границы для каждой упорядоченной точки
+            var edges = new ContourCV[n];
+            int n_edges = 0;
+            for (int k = 0; k < n; k++)
+            {
+                for (int j = 0; j < conts.Length; j++)
+                {
+                    if (conts[j].edge_x == null) continue;
+                    if (Math.Abs(conts[j].pc.X - corn[k].X) < 0.01 && Math.Abs(conts[j].pc.Y - corn[k].Y) < 0.01)
+                    {
+                        edges[k] = conts[j];
+                        n_edges++;
+                        break;
+                    }
+                }
+            }
+            if (n_edges == 0) return 0;
+
+            var px = new double[n];
+            var py = new double[n];
+            double mx = 0, my = 0;
+            for (int k = 0; k < n; k++) { px[k] = corn[k].X; py[k] = corn[k].Y; mx += px[k]; my += py[k]; }
+            mx /= n; my /= n;
+            double sc = 0;
+            for (int k = 0; k < n; k++) sc += Math.Sqrt((px[k] - mx) * (px[k] - mx) + (py[k] - my) * (py[k] - my));
+            sc /= n;
+
+            // сколько точек в строке упорядоченного массива (Width или Height) - выбираем по невязке гомографии
+            double[,] Hm = null;
+            double best = double.MaxValue;
+            var gx = new double[n];
+            var gy = new double[n];
+            var row_lens = pattern_size.Width == pattern_size.Height
+                ? new int[] { pattern_size.Width }
+                : new int[] { pattern_size.Width, pattern_size.Height };
+            foreach (var n1 in row_lens)
+            {
+                for (int k = 0; k < n; k++) { gx[k] = k % n1; gy[k] = k / n1; }
+                var Hcur = find_homography(gx, gy, px, py);
+                if (Hcur == null) continue;
+                double s = 0;
+                for (int k = 0; k < n; k++)
+                {
+                    double x, y;
+                    apply(Hcur, gx[k], gy[k], out x, out y);
+                    s += (x - px[k]) * (x - px[k]) + (y - py[k]) * (y - py[k]);
+                }
+                double rms = Math.Sqrt(s / n);
+                if (rms < best) { best = rms; Hm = Hcur; }
+            }
+            if (Hm == null || best > 0.03 * sc) return 0;   // сетка не ложится на плоскость - поправку не применяем
+            var Hi = inv3(Hm);
+            if (Hi == null) return 0;
+
+            int n_corr = 0;
+            for (int k = 0; k < n; k++)
+            {
+                if (edges[k] == null) continue;
+                var e_x = edges[k].edge_x;
+                var e_y = edges[k].edge_y;
+                var us = new double[e_x.Length];
+                var vs = new double[e_x.Length];
+                for (int i = 0; i < e_x.Length; i++) apply(Hi, e_x[i], e_y[i], out us[i], out vs[i]);
+                double u0, v0;
+                if (!fit_circle_centre(us, vs, out u0, out v0)) continue;
+                double x, y;
+                apply(Hm, u0, v0, out x, out y);
+                double dx = x - px[k];
+                double dy = y - py[k];
+                if (double.IsNaN(dx) || double.IsNaN(dy) || Math.Sqrt(dx * dx + dy * dy) > 1.0) continue;
+                corn[k] = new System.Drawing.PointF((float)x, (float)y);
+                n_corr++;
+            }
+            return n_corr;
+        }
+
+        /// <summary>решение A*x = b методом Гаусса с выбором главного элемента; null если система вырождена</summary>
+        static double[] solve_linear(double[,] A, double[] b)
+        {
+            int n = b.Length;
+            A = (double[,])A.Clone();
+            b = (double[])b.Clone();
+            for (int c = 0; c < n; c++)
+            {
+                int p = c;
+                for (int r = c + 1; r < n; r++)
+                {
+                    if (Math.Abs(A[r, c]) > Math.Abs(A[p, c])) p = r;
+                }
+                if (Math.Abs(A[p, c]) < 1e-12) return null;
+                if (p != c)
+                {
+                    for (int k = 0; k < n; k++) { var tmp = A[p, k]; A[p, k] = A[c, k]; A[c, k] = tmp; }
+                    var tb = b[p]; b[p] = b[c]; b[c] = tb;
+                }
+                for (int r = c + 1; r < n; r++)
+                {
+                    double f = A[r, c] / A[c, c];
+                    if (f == 0) continue;
+                    for (int k = c; k < n; k++) A[r, k] -= f * A[c, k];
+                    b[r] -= f * b[c];
+                }
+            }
+            var x = new double[n];
+            for (int r = n - 1; r >= 0; r--)
+            {
+                double s = b[r];
+                for (int k = r + 1; k < n; k++) s -= A[r, k] * x[k];
+                x[r] = s / A[r, r];
+            }
+            return x;
+        }
+
+        /// <summary>центр эллипса A*x^2 + B*x*y + C*y^2 + D*x + E*y = 1 по МНК (координаты центрируются и нормируются)</summary>
+        static bool fit_ellipse_centre(double[] xs, double[] ys, out double cx, out double cy)
+        {
+            cx = 0; cy = 0;
+            int n = xs.Length;
+            if (n < 6) return false;
+            double mx = 0, my = 0;
+            for (int i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
+            mx /= n; my /= n;
+            double sc = 0;
+            for (int i = 0; i < n; i++) sc += Math.Sqrt((xs[i] - mx) * (xs[i] - mx) + (ys[i] - my) * (ys[i] - my));
+            sc /= n;
+            if (sc < 1e-9) return false;
+            var A = new double[5, 5];
+            var b = new double[5];
+            var row = new double[5];
+            for (int i = 0; i < n; i++)
+            {
+                double x = (xs[i] - mx) / sc;
+                double y = (ys[i] - my) / sc;
+                row[0] = x * x; row[1] = x * y; row[2] = y * y; row[3] = x; row[4] = y;
+                for (int r = 0; r < 5; r++)
+                {
+                    b[r] += row[r];
+                    for (int c = 0; c < 5; c++) A[r, c] += row[r] * row[c];
+                }
+            }
+            var q = solve_linear(A, b);
+            if (q == null) return false;
+            double den = 4 * q[0] * q[2] - q[1] * q[1];
+            if (den <= 1e-12) return false;   // не эллипс
+            double ecx = (q[1] * q[4] - 2 * q[2] * q[3]) / den;
+            double ecy = (q[1] * q[3] - 2 * q[0] * q[4]) / den;
+            cx = mx + ecx * sc;
+            cy = my + ecy * sc;
+            return !(double.IsNaN(cx) || double.IsNaN(cy) || double.IsInfinity(cx) || double.IsInfinity(cy));
+        }
+
+        /// <summary>центр окружности по МНК (алгебраическая подгонка)</summary>
+        static bool fit_circle_centre(double[] xs, double[] ys, out double cx, out double cy)
+        {
+            cx = 0; cy = 0;
+            int n = xs.Length;
+            if (n < 5) return false;
+            double mx = 0, my = 0;
+            for (int i = 0; i < n; i++) { mx += xs[i]; my += ys[i]; }
+            mx /= n; my /= n;
+            var A = new double[3, 3];
+            var b = new double[3];
+            var row = new double[3];
+            for (int i = 0; i < n; i++)
+            {
+                double x = xs[i] - mx;
+                double y = ys[i] - my;
+                double z = x * x + y * y;
+                row[0] = x; row[1] = y; row[2] = 1;
+                for (int r = 0; r < 3; r++)
+                {
+                    b[r] += row[r] * z;
+                    for (int c = 0; c < 3; c++) A[r, c] += row[r] * row[c];
+                }
+            }
+            var q = solve_linear(A, b);
+            if (q == null) return false;
+            cx = mx + q[0] / 2;
+            cy = my + q[1] / 2;
+            return true;
+        }
+
+        /// <summary>гомография сетка (gx,gy) -> изображение (px,py) по всем точкам, МНК</summary>
+        static double[,] find_homography(double[] gx, double[] gy, double[] px, double[] py)
+        {
+            int n = gx.Length;
+            if (n < 4) return null;
+            double mx = 0, my = 0;
+            for (int i = 0; i < n; i++) { mx += px[i]; my += py[i]; }
+            mx /= n; my /= n;
+            double sc = 0;
+            for (int i = 0; i < n; i++) sc += Math.Sqrt((px[i] - mx) * (px[i] - mx) + (py[i] - my) * (py[i] - my));
+            sc /= n;
+            if (sc < 1e-9) return null;
+            var A = new double[8, 8];
+            var b = new double[8];
+            var r1 = new double[8];
+            var r2 = new double[8];
+            for (int i = 0; i < n; i++)
+            {
+                double X = gx[i], Y = gy[i];
+                double x = (px[i] - mx) / sc;
+                double y = (py[i] - my) / sc;
+                r1[0] = X; r1[1] = Y; r1[2] = 1; r1[3] = 0; r1[4] = 0; r1[5] = 0; r1[6] = -x * X; r1[7] = -x * Y;
+                r2[0] = 0; r2[1] = 0; r2[2] = 0; r2[3] = X; r2[4] = Y; r2[5] = 1; r2[6] = -y * X; r2[7] = -y * Y;
+                for (int r = 0; r < 8; r++)
+                {
+                    b[r] += r1[r] * x + r2[r] * y;
+                    for (int c = 0; c < 8; c++) A[r, c] += r1[r] * r1[c] + r2[r] * r2[c];
+                }
+            }
+            var h = solve_linear(A, b);
+            if (h == null) return null;
+            return new double[3, 3]
+            {
+                { sc * h[0] + mx * h[6], sc * h[1] + mx * h[7], sc * h[2] + mx },
+                { sc * h[3] + my * h[6], sc * h[4] + my * h[7], sc * h[5] + my },
+                { h[6], h[7], 1.0 }
+            };
+        }
+
+        static double[,] inv3(double[,] m)
+        {
+            double a = m[0, 0], b = m[0, 1], c = m[0, 2];
+            double d = m[1, 0], e = m[1, 1], f = m[1, 2];
+            double g = m[2, 0], h = m[2, 1], i = m[2, 2];
+            double det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+            if (Math.Abs(det) < 1e-15) return null;
+            return new double[3, 3]
+            {
+                { (e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det },
+                { (f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det },
+                { (d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det }
+            };
+        }
+
+        static void apply(double[,] m, double x, double y, out double xo, out double yo)
+        {
+            double w = m[2, 0] * x + m[2, 1] * y + m[2, 2];
+            xo = (m[0, 0] * x + m[0, 1] * y + m[0, 2]) / w;
+            yo = (m[1, 0] * x + m[1, 1] * y + m[1, 2]) / w;
+        }
+    }
+
     public static class FindCircles
     {
         static int counter = 0;
@@ -751,15 +1230,22 @@ namespace opengl3
         }
 
 
+        /// <summary>субпиксельное уточнение центров в findCircles_v3 (false - прежнее поведение: центр масс контура)</summary>
+        public static bool subpix_centres = true;
+        /// <summary>поправка перспективного смещения центров для упорядоченной сетки в findCircles_v3</summary>
+        public static bool persp_correction = true;
+
         public static Mat findCircles_v3(Mat mat, ref System.Drawing.PointF[] corn, Size pattern_size, bool order = true)
         {
             var im_tr = new Mat();
             var orig = new Mat();
             bool debug = false;
-            if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, im_tr, ColorConversion.Bgr2Gray);
-            else im_tr = mat;
+            // исходное серое изображение сохраняется для субпиксельного уточнения, входной mat не изменяется
+            var gray = new Mat();
+            if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, gray, ColorConversion.Bgr2Gray);
+            else gray = mat.Clone();
 
-            CvInvoke.GaussianBlur(im_tr, im_tr, new Size(7, 7), -1);
+            CvInvoke.GaussianBlur(gray, im_tr, new Size(7, 7), -1);
             CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
 
             //CvInvoke.Threshold(im_tr, im_tr,30,255,ThresholdType.BinaryInv);
@@ -774,6 +1260,10 @@ namespace opengl3
             contours_comp = ContourCV.size_filter(contours_comp,20, 1500);
             contours_comp = ContourCV.only_same_centres_v2(contours_comp, 3);
             contours_comp = ContourCV.filter_alone_ps(contours_comp);//_filtr
+
+            // грубые центры (центр масс пиксельного контура) -> субпиксельные (эллипс по точкам перепада яркости)
+            if (subpix_centres) SubPixCircle.refine(gray, contours_comp);
+            gray.Dispose();
 
 
             CvInvoke.CvtColor(im_tr, im_tr, ColorConversion.Gray2Bgr);
@@ -815,6 +1305,7 @@ namespace opengl3
                 {
                     corn = new System.Drawing.PointF[ps_ord.Length];
                     ps_ord.CopyTo(corn, 0);
+                    if (subpix_centres && persp_correction) SubPixCircle.perspective_correct(corn, contours_comp, pattern_size);
                     UtilOpenCV.drawTours(im_tr, PointF.toPoint(ps_ord), 255, 0, 0, 2);
                     UtilOpenCV.drawTours(im_tr, PointF.toPoint(new System.Drawing.PointF[] { ps_ord[0] }), 0, 255, 255, 10);
                 }

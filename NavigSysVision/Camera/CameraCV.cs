@@ -172,6 +172,51 @@ namespace opengl3
             return pos;
         }
 
+        /// <summary>СКО ошибки репроекции последнего compPos по шаблону, пикс</summary>
+        public double last_reproj_err = -1;
+
+        /// <summary>
+        /// 3d-координаты всех точек сетки по 4 угловым точкам
+        /// (corners: индексы 0, w-1, w*(h-1), w*h-1 упорядоченного массива, как в UtilOpenCV.takeGabObp)
+        /// </summary>
+        static MCvPoint3D32f[] gridObp(MCvPoint3D32f[] corners, Size size_patt)
+        {
+            int w = size_patt.Width;
+            int h = size_patt.Height;
+            var ps = new MCvPoint3D32f[w * h];
+            var p0 = corners[0];
+            var pw = corners[1];
+            var ph = corners[2];
+            for (int j = 0; j < h; j++)
+            {
+                for (int i = 0; i < w; i++)
+                {
+                    float u = w > 1 ? (float)i / (w - 1) : 0;
+                    float v = h > 1 ? (float)j / (h - 1) : 0;
+                    ps[j * w + i] = new MCvPoint3D32f(
+                        p0.X + (pw.X - p0.X) * u + (ph.X - p0.X) * v,
+                        p0.Y + (pw.Y - p0.Y) * u + (ph.Y - p0.Y) * v,
+                        p0.Z + (pw.Z - p0.Z) * u + (ph.Z - p0.Z) * v);
+                }
+            }
+            return ps;
+        }
+
+        /// <summary>СКО ошибки репроекции для текущих cur_r, cur_t, пикс</summary>
+        double reprojErr(MCvPoint3D32f[] points3D, System.Drawing.PointF[] points2D)
+        {
+            var pr = CvInvoke.ProjectPoints(points3D, cur_r, cur_t, cameramatrix, distortmatrix);
+            if (pr == null || pr.Length != points2D.Length || pr.Length == 0) return -1;
+            double s = 0;
+            for (int i = 0; i < pr.Length; i++)
+            {
+                double dx = pr[i].X - points2D[i].X;
+                double dy = pr[i].Y - points2D[i].Y;
+                s += dx * dx + dy * dy;
+            }
+            return Math.Sqrt(s / pr.Length);
+        }
+
         public bool compPos(Mat _mat, PatternType patternType,Size pattern_size,float mark = -1,bool centr = false)
         {
             var mat = _mat.Clone();
@@ -232,26 +277,23 @@ namespace opengl3
             //CvInvoke.Imshow("mat", mat);
             //CvInvoke.WaitKey(200);
             var matDraw = FindCircles.findCircles_v3(mat,ref cornF, size_patt);
-            //var matDraw = GeometryAnalyse.findCirclesIter(mat.Clone(), ref cornF, size_patt);
             if (matDraw == null)
             {
                 return false;
             }
+            // шаблон не найден или не упорядочен: findCircles_v3 в этом случае оставляет массив нулей
+            if (cornF == null || cornF.Length != len) return false;
+            if (cornF[0].IsEmpty && cornF[len - 1].IsEmpty) return false;
+
             var mat_p1 = UtilOpenCV.drawPointsF(_mat, cornF, 255, 0, 0);
             last_corners = (System.Drawing.PointF[])cornF.Clone();
-            // CvInvoke.Imshow("pos", mat_p1);
-            // CvInvoke.WaitKey();
-            //cornF = PointF.addNoise(cornF, 1.7f);
-            //Console.WriteLine("addnoise");
-            var points2d = UtilOpenCV.takeGabObp(cornF, size_patt);
 
-
-            /* prin.t("points2d");
-            prin.t(points2d);
-                
-            prin.t("points3d");
-            prin.t(points3d);*/
-            var pos_cur = compPos(points3d, points2d);
+            // поза считается по всем точкам сетки, а не по 4 угловым:
+            // 3d-координаты каждой точки - интерполяция между теми же 4 углами points3d,
+            // поэтому система координат шаблона остаётся прежней
+            var points3d_all = gridObp(points3d, size_patt);
+            var pos_cur = compPos(points3d_all, cornF);
+            last_reproj_err = reprojErr(points3d_all, cornF);
             /*Console.WriteLine(pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ");
             UtilOpenCV.drawPoints(matDraw, points2d, points3d, 255, 0, 255, 1);
             CvInvoke.Imshow("pos "+ pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ", matDraw);//points2d[0].X
