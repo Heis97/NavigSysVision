@@ -111,7 +111,7 @@ namespace opengl3
             return ps_comp;
         }
 
-        public Point3d_GL[] comp_points_3d_not_matched(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2, int ind_main = 0)
+        public Point3d_GL[] comp_points_3d_not_matched(System.Drawing.PointF[] ps1, System.Drawing.PointF[] ps2)
         {
             if (ps1 == null || ps2 == null) return null;
 
@@ -127,7 +127,7 @@ namespace opengl3
             {
                 for (int j = 0; j < lines2.Length; j++)
                 {
-                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],1);
+                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],1.5);
                     if(p3d.exist)
                     {
                         ps_comp.Add(p3d);

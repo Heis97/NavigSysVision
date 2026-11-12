@@ -1235,7 +1235,7 @@ namespace opengl3
         /// <summary>поправка перспективного смещения центров для упорядоченной сетки в findCircles_v3</summary>
         public static bool persp_correction = true;
 
-        public static Mat findCircles_v3(Mat mat, ref System.Drawing.PointF[] corn, Size pattern_size, bool order = true)
+        public static Mat findCircles_v3(Mat mat, ref System.Drawing.PointF[] corn, Size pattern_size, bool order = true, bool find_cont = true)
         {
             var im_tr = new Mat();
             var orig = new Mat();
@@ -1245,8 +1245,18 @@ namespace opengl3
             if (mat.NumberOfChannels == 3) CvInvoke.CvtColor(mat, gray, ColorConversion.Bgr2Gray);
             else gray = mat.Clone();
 
-            CvInvoke.GaussianBlur(gray, im_tr, new Size(7, 7), -1);
-            CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
+
+            
+            CvInvoke.GaussianBlur(gray, im_tr, new Size(9, 9), -1);
+            if (find_cont)
+            {
+                CvInvoke.AdaptiveThreshold(im_tr, im_tr, 255, AdaptiveThresholdType.MeanC, ThresholdType.BinaryInv, 5, 5);
+            }
+            else
+            {
+                CvInvoke.Threshold(im_tr, im_tr, 15, 255, ThresholdType.Binary);
+            }
+                
 
             //CvInvoke.Threshold(im_tr, im_tr,30,255,ThresholdType.BinaryInv);
 
@@ -1257,9 +1267,14 @@ namespace opengl3
             var contours_comp = ContourCV.contourCVs(contours);
             ContourCV.comp_cents_lite(ref contours_comp);
 
-            contours_comp = ContourCV.size_filter(contours_comp,20, 1500);
-            contours_comp = ContourCV.only_same_centres_v2(contours_comp, 3);
-            contours_comp = ContourCV.filter_alone_ps(contours_comp);//_filtr
+            contours_comp = ContourCV.size_filter(contours_comp,20, 3500);
+
+            if(find_cont)
+            {
+                contours_comp = ContourCV.only_same_centres_v2(contours_comp, 3);
+                contours_comp = ContourCV.filter_alone_ps(contours_comp);//_filtr
+            }
+            
 
             // грубые центры (центр масс пиксельного контура) -> субпиксельные (эллипс по точкам перепада яркости)
             if (subpix_centres) SubPixCircle.refine(gray, contours_comp);

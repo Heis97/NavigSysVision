@@ -240,7 +240,7 @@ namespace opengl3
 
             stereo_cam = new StereoCamera(new CameraCV[] { cam1, cam2 });
 
-            var stereo_cal_1 = "cam_cal121126_2a";
+            var stereo_cal_1 = "cam_cal121126_2";
             var frms_stereo = FrameLoader.loadImages_stereoCV(@"cam1\" + stereo_cal_1, @"cam2\" + stereo_cal_1,  FrameType.Pattern, false);
             stereo_cam.calibrate_stereo(frms_stereo,PatternType.Mesh,chess_size,markSize);
 
@@ -256,7 +256,7 @@ namespace opengl3
             videoCaptures[num_vid] = capture;
             capture.Set(CapProp.FrameWidth, cameraSize.Width);
             capture.Set(CapProp.FrameHeight, cameraSize.Height);
-            capture.Set(CapProp.Exposure, -7);
+            capture.Set(CapProp.Exposure, -12);
             capture.Set(CapProp.FourCC, VideoWriter.Fourcc('M', 'J', 'P', 'G'));
             //capture.Set(CapProp.Fps, 30);
             cameraSize.Width = (int)capture.Get(CapProp.FrameWidth);
@@ -340,7 +340,7 @@ namespace opengl3
             var mats_fon = new Mat[cams_num];
             for (int i = 0; i < cams_num; i++)
             {
-                CvInvoke.NamedWindow("cam" + i, WindowFlags.KeepRatio);
+                CvInvoke.NamedWindow("cam" + i, WindowFlags.AutoSize);
                 mats[i] = new Mat();
                 mats_show[i] = new Mat();
                 mats_find[i] = new Mat();
@@ -381,8 +381,8 @@ namespace opengl3
                     if (has_frame)
                     {
                         mats[i] = mats_show[i].Clone();
-                        mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], chess_size,true);
-                        //FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false); mats_find[i] = mats_show[i].Clone();
+                        //mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], chess_size,false,false);
+                        FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], chess_size, false,false); mats_find[i] = mats_show[i].Clone();
 
                         // усреднённое сохранение: берём только новые кадры камеры
                         if (burst_active && burst_cnt[i] < save_frames_n && cur_counter[i] != burst_last_counter[i])
@@ -407,7 +407,7 @@ namespace opengl3
                         
                 }
 
-                /*var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
+                var ps3d = stereo_cam.comp_points_3d_not_matched(ps_all_2d[0], ps_all_2d[1]);
                 var msg = new StringBuilder();
 
                 foreach (var tool in navig_tools.Tools)
@@ -439,7 +439,7 @@ namespace opengl3
                         draw_3d_ps(ps_all[0], ref mats_find,255,0,0,2);
                     }
                 }
-                */
+                
                 if (burst_active)
                 {
                     burst_iters++;

@@ -62,12 +62,12 @@ namespace opengl3
                 var cur_dist = (p2_cross - p1_cross).magnitude();
                 if (cur_dist < dist_cross)
                 {
-                    //Console.WriteLine("cur_dist: "+cur_dist);
+                    Console.WriteLine("cur_dist: "+cur_dist);
                     return p_med_cross;
                 }
                 else return Point3d_GL.notExistP();
             }
-           // Console.WriteLine();    
+            Console.WriteLine("__________________");    
             return p_med_cross;
         }
 
