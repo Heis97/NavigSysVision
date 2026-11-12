@@ -1254,7 +1254,7 @@ namespace opengl3
             }
             else
             {
-                CvInvoke.Threshold(im_tr, im_tr, 15, 255, ThresholdType.Binary);
+                CvInvoke.Threshold(im_tr, im_tr, 60, 255, ThresholdType.Binary);
             }
                 
 

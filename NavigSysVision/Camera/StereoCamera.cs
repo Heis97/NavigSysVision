@@ -127,7 +127,7 @@ namespace opengl3
             {
                 for (int j = 0; j < lines2.Length; j++)
                 {
-                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],1.5);
+                    var p3d = Line3d_GL.point_betw_cross_lines(lines1[i], lines2[j],0.7);
                     if(p3d.exist)
                     {
                         ps_comp.Add(p3d);
