@@ -224,7 +224,7 @@ namespace opengl3
             
             if (cameraCVs.Length==2)
             {
-                for (int i = 0; i <1; i++)
+                for (int i = 0; i < frames.Length; i++)
                 {
                     var pos1 = cameraCVs[0].compPos(frames[i].im, patternType, pattern_size, mark_size);
                     var pos2 = cameraCVs[1].compPos(frames[i].im_sec, patternType, pattern_size, mark_size);
@@ -237,14 +237,14 @@ namespace opengl3
                         R_inv = R.Clone();
                         CvInvoke.Invert(R_inv, R_inv, DecompMethod.LU);
                         var c1 = cameraCVs[0].matrixCS;
-                        Console.WriteLine(i + " " + R[0, 3] + " " + R[1, 3] + " " + R[2, 3] + " " + " " + R[0, 2] + " " + R[1, 2] + " " + R[2, 2] + " "//
+                        Console.WriteLine(i + " " + Math.Round( R[0, 3],3) + " " + Math.Round(R[1, 3], 3) + " " + Math.Round(R[2, 3], 3) + " " + " " + R[0, 2] + " " + R[1, 2] + " " + R[2, 2] + " "//
                         + c1[0, 3] + " " + c1[1, 3] + " " + c1[2, 3] + " " + c1[2, 0] + " " + c1[2, 1] + " " + c1[2, 2]) ;// ; ;
                         GC.Collect();
 
                         
                     }
 
-                    //Console.WriteLine(comp_pos);
+                   // Console.WriteLine(comp_pos);
                 }
             }
         }

@@ -205,7 +205,9 @@ namespace opengl3
     {
         VideoCapture[] videoCaptures = new VideoCapture[4];
         volatile IntPtr[] camera_ind_ptr = new IntPtr[] { (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0, (IntPtr)0 };
-        private Size cameraSize = new Size(1280, 720);
+        //Size cameraSize = new Size(1280, 720);
+
+        Size cameraSize = new Size(1920, 1080);
         volatile Mat[] mat_global = new Mat[6];
         int cam1_ind = 0;
         int cam2_ind = 1;
@@ -229,8 +231,8 @@ namespace opengl3
             navig_tools.Save("tools_navig.json");
             for (int i = 0; i < mat_global.Length; i++) mat_global[i] = new Mat();
 
-            var conf1 = "cam1_cam_cal041126a.txt";
-            var conf2 = "cam2_cam_cal041126a.txt";
+            var conf1 = "cam1_cam_cal121126c.txt";
+            var conf2 = "cam2_cam_cal121126c.txt";
             Console.WriteLine("loadScanner");
             var cam1 = CameraCV.load_camera(conf1);
             var cam2 = CameraCV.load_camera(conf2);
@@ -238,7 +240,7 @@ namespace opengl3
 
             stereo_cam = new StereoCamera(new CameraCV[] { cam1, cam2 });
 
-            var stereo_cal_1 = "cam_cal041126a";
+            var stereo_cal_1 = "cam_cal121126a";
             var frms_stereo = FrameLoader.loadImages_stereoCV(@"cam1\" + stereo_cal_1, @"cam2\" + stereo_cal_1,  FrameType.Pattern, false);
             stereo_cam.calibrate_stereo(frms_stereo,PatternType.Mesh,chess_size,markSize);
 
@@ -285,21 +287,21 @@ namespace opengl3
 
         }
         Size chess_size = new Size(11,8);
-        float markSize = 18.37f;
+        float markSize = 18.37f;//18.37f;
         void capturingVideo(object sender, EventArgs e)
         {
             drawCameras((VideoCapture)sender);
         }
         void calib_cam()
         {
-            var frms_1 = FrameLoader.loadImages_diff(@"cam1\cam_cal041126a", FrameType.Pattern, PatternType.Mesh);//
+            var frms_1 = FrameLoader.loadImages_diff(@"cam2\cam_cal121126a", FrameType.Pattern, PatternType.Mesh);//
             var cam1 = new CameraCV(frms_1, chess_size, markSize, null);
-            cam1.save_camera("cam1_cam_cal041126a.txt");
+            cam1.save_camera("cam2_cam_cal121126c.txt");
         }
         private void con_navig_sys()
         {
 
-           // calib_cam();
+            //calib_cam();
 
             videoStart(cam1_ind, 0);
             videoStart(cam2_ind, 1);
@@ -310,7 +312,7 @@ namespace opengl3
             server_thread1.Start();
 
         }
-        string cur_save_fold = "cam_cal041126a";
+        string cur_save_fold = "cam_cal121126a";
         int glob_im_coubter = 0;
 
         bool fon_inited = false;

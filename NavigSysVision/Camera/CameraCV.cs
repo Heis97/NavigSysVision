@@ -175,139 +175,93 @@ namespace opengl3
         public bool compPos(Mat _mat, PatternType patternType,Size pattern_size,float mark = -1,bool centr = false)
         {
             var mat = _mat.Clone();
-            if (patternType == PatternType.Chess)
+            
+            Size size_patt = pattern_size;
+            float markSize = this.mark_size;
+            if (mark > 0)
             {
-                Size size_patt = pattern_size;
-                var mat1 = mat.Clone();
-                var gray = mat.ToImage<Gray, byte>();
-                var corn = new VectorOfPointF();
-
-                float markSize = this.mark_size;
-                if (mark >0)
-                {
-                    markSize = mark;
-                }
-                var obp = new MCvPoint3D32f[size_patt.Width * size_patt.Height];
-                int ind = 0;
-                for (int j = 0; j < size_patt.Height; j++)
-                {
-                    for (int i = size_patt.Width - 1; i >= 0; i--)
-                    {
-                        obp[ind] = new MCvPoint3D32f(markSize * (float)i, markSize * (float)j, 0.0f);
-                        ind++;
-                    }
-                }
-                var ret = CvInvoke.FindChessboardCorners(gray, size_patt, corn, CalibCbType.AdaptiveThresh);
-               /* CvInvoke.Imshow("gray", gray);
-                CvInvoke.WaitKey();
-                Console.WriteLine(ret);*/
-                if (ret == true)
-                {
-                    //Console.WriteLine("CHESS TRUE");
-                    CvInvoke.CornerSubPix(gray, corn, new Size(5, 5), new Size(-1, -1), new MCvTermCriteria(30, 0.001));
-                    var corn2 = corn.ToArray();
-
-                    var points2d = UtilOpenCV.takeGabObp(corn2, size_patt);
-                    var points3d = UtilOpenCV.takeGabObp(obp, size_patt);
-                    compPos(points3d, points2d);
-                    
-                    return true;
-
-                }
-                else
-                {
-                    //Console.WriteLine("CHESS FALSE");
-                }
+                markSize = mark;
             }
-            else if (patternType == PatternType.Mesh)
+
+            var x = markSize * (size_patt.Height - 1);
+            var y = markSize * (size_patt.Width - 1);
+
+            /* var points3d = new MCvPoint3D32f[]
+                {
+                    new MCvPoint3D32f(0,0,0),
+                    new MCvPoint3D32f(x,0,0),
+                    new MCvPoint3D32f(0,y,0),
+                    new MCvPoint3D32f(x,y,0)
+                };*/
+            MCvPoint3D32f[] points3d = null;
+            if (centr)
             {
-                Size size_patt = pattern_size;
-                float markSize = this.mark_size;
-                if (mark > 0)
+                points3d = new MCvPoint3D32f[]
                 {
-                    markSize = mark;
-                }
+                    new MCvPoint3D32f(x/2,y/2,0),
+                    new MCvPoint3D32f(-x/2,y/2,0),
+                    new MCvPoint3D32f(x/2,-y/2,0),
+                    new MCvPoint3D32f(-x/2,-y/2,0)
+                };
+            }
+            else 
+            {
+                /*points3d = new MCvPoint3D32f[]
+                {
+                    new MCvPoint3D32f(x,y,0),
+                    new MCvPoint3D32f(0,y,0),
+                    new MCvPoint3D32f(x,0,0),
+                    new MCvPoint3D32f(0,0,0)
+                };*/
 
-                var x = markSize * (size_patt.Height - 1);
-                var y = markSize * (size_patt.Width - 1);
-
-                /* var points3d = new MCvPoint3D32f[]
-                 {
-                     new MCvPoint3D32f(0,0,0),
-                     new MCvPoint3D32f(x,0,0),
-                     new MCvPoint3D32f(0,y,0),
-                     new MCvPoint3D32f(x,y,0)
-                 };*/
-                MCvPoint3D32f[] points3d = null;
-                if (centr)
-                {
-                    points3d = new MCvPoint3D32f[]
+                /* points3d = new MCvPoint3D32f[]
                     {
-                        new MCvPoint3D32f(x/2,y/2,0),
-                        new MCvPoint3D32f(-x/2,y/2,0),
-                        new MCvPoint3D32f(x/2,-y/2,0),
-                        new MCvPoint3D32f(-x/2,-y/2,0)
-                    };
-                }
-                else 
-                {
-                    /*points3d = new MCvPoint3D32f[]
-                    {
-                        new MCvPoint3D32f(x,y,0),
-                        new MCvPoint3D32f(0,y,0),
-                        new MCvPoint3D32f(x,0,0),
-                        new MCvPoint3D32f(0,0,0)
+                        new MCvPoint3D32f(0,y,0), new MCvPoint3D32f(0,0,0),
+                        new MCvPoint3D32f(x,y,0), new MCvPoint3D32f(x,0,0)
                     };*/
 
-                    /* points3d = new MCvPoint3D32f[]
-                     {
-                         new MCvPoint3D32f(0,y,0), new MCvPoint3D32f(0,0,0),
-                         new MCvPoint3D32f(x,y,0), new MCvPoint3D32f(x,0,0)
-                     };*/
-
-                    points3d = new MCvPoint3D32f[]
-                    {
-                        new MCvPoint3D32f(0,0,0), new MCvPoint3D32f(0,y,0),
-                        new MCvPoint3D32f(x,0,0), new MCvPoint3D32f(x,y,0)
-                    };
-                }
-
-                var len = size_patt.Width * size_patt.Height;
-                var cornF = new System.Drawing.PointF[len];
-                //CvInvoke.Imshow("mat", mat);
-                //CvInvoke.WaitKey(200);
-                var matDraw = FindCircles.findCircles_v2(mat,ref cornF, size_patt);
-                //var matDraw = GeometryAnalyse.findCirclesIter(mat.Clone(), ref cornF, size_patt);
-                if (matDraw == null)
+                points3d = new MCvPoint3D32f[]
                 {
-                    return false;
-                }
-                var mat_p1 = UtilOpenCV.drawPointsF(_mat, cornF, 255, 0, 0);
-                last_corners = (System.Drawing.PointF[])cornF.Clone();
-                // CvInvoke.Imshow("pos", mat_p1);
-                // CvInvoke.WaitKey();
-                //cornF = PointF.addNoise(cornF, 1.7f);
-                //Console.WriteLine("addnoise");
-                var points2d = UtilOpenCV.takeGabObp(cornF, size_patt);
-
-
-               /* prin.t("points2d");
-                prin.t(points2d);
-                
-                prin.t("points3d");
-                prin.t(points3d);*/
-               var pos_cur = compPos(points3d, points2d);
-                /*Console.WriteLine(pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ");
-                UtilOpenCV.drawPoints(matDraw, points2d, points3d, 255, 0, 255, 1);
-                CvInvoke.Imshow("pos "+ pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ", matDraw);//points2d[0].X
-                CvInvoke.WaitKey();*/
-                mat = null;
-                matDraw = null;
-
-                GC.Collect();
-                return true;
+                    new MCvPoint3D32f(0,0,0), new MCvPoint3D32f(0,y,0),
+                    new MCvPoint3D32f(x,0,0), new MCvPoint3D32f(x,y,0)
+                };
             }
-            return false;
+
+            var len = size_patt.Width * size_patt.Height;
+            var cornF = new System.Drawing.PointF[len];
+            //CvInvoke.Imshow("mat", mat);
+            //CvInvoke.WaitKey(200);
+            var matDraw = FindCircles.findCircles_v3(mat,ref cornF, size_patt);
+            //var matDraw = GeometryAnalyse.findCirclesIter(mat.Clone(), ref cornF, size_patt);
+            if (matDraw == null)
+            {
+                return false;
+            }
+            var mat_p1 = UtilOpenCV.drawPointsF(_mat, cornF, 255, 0, 0);
+            last_corners = (System.Drawing.PointF[])cornF.Clone();
+            // CvInvoke.Imshow("pos", mat_p1);
+            // CvInvoke.WaitKey();
+            //cornF = PointF.addNoise(cornF, 1.7f);
+            //Console.WriteLine("addnoise");
+            var points2d = UtilOpenCV.takeGabObp(cornF, size_patt);
+
+
+            /* prin.t("points2d");
+            prin.t(points2d);
+                
+            prin.t("points3d");
+            prin.t(points3d);*/
+            var pos_cur = compPos(points3d, points2d);
+            /*Console.WriteLine(pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ");
+            UtilOpenCV.drawPoints(matDraw, points2d, points3d, 255, 0, 255, 1);
+            CvInvoke.Imshow("pos "+ pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ", matDraw);//points2d[0].X
+            CvInvoke.WaitKey();*/
+            mat = null;
+            matDraw = null;
+
+            GC.Collect();
+            return true;
+            
         }
         public Point3d_GL point3DfromCam(PointF _p)
         {
@@ -542,7 +496,7 @@ namespace opengl3
             {
                 var len = size_patt.Width * size_patt.Height;
                 var cornF = new System.Drawing.PointF[len];
-                var f_c = FindCircles.findCircles_v2(frame.im,ref cornF, size_patt);
+                var f_c = FindCircles.findCircles_v3(frame.im,ref cornF, size_patt);
                 
                 if(f_c != null)
                 {

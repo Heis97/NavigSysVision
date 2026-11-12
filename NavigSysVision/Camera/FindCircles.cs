@@ -339,7 +339,7 @@ namespace opengl3
             if(contours.Length>3)
             {
                 var med_ind = (int)(contours.Length / 2);
-                var min_dist_real = sort_arr[med_ind] * 2;
+                var min_dist_real = sort_arr[med_ind] * 1.2;
                 for (int i = 0; i < min_dists.Length; i++)
                 {
                     if (min_dists[i]<min_dist_real)
