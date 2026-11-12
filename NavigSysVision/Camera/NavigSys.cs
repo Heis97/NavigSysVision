@@ -256,7 +256,7 @@ namespace opengl3
             videoCaptures[num_vid] = capture;
             capture.Set(CapProp.FrameWidth, cameraSize.Width);
             capture.Set(CapProp.FrameHeight, cameraSize.Height);
-            capture.Set(CapProp.Exposure, -12);
+            capture.Set(CapProp.Exposure, -11);
             capture.Set(CapProp.FourCC, VideoWriter.Fourcc('M', 'J', 'P', 'G'));
             //capture.Set(CapProp.Fps, 30);
             cameraSize.Width = (int)capture.Get(CapProp.FrameWidth);
