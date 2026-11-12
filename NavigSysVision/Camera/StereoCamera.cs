@@ -233,6 +233,7 @@ namespace opengl3
                 var objps = new List<MCvPoint3D32f[]>();
                 var ps1 = new List<System.Drawing.PointF[]>();
                 var ps2 = new List<System.Drawing.PointF[]>();
+                var frame_inds = new List<int>();
                 for (int i = 0; i < frames.Length; i++)
                 {
                     var pos1 = cameraCVs[0].compPos(frames[i].im, patternType, pattern_size, mark_size);
@@ -254,6 +255,7 @@ namespace opengl3
                         objps.Add(cameraCVs[0].last_obp);
                         ps1.Add(cameraCVs[0].last_corners);
                         ps2.Add(cameraCVs[1].last_corners);
+                        frame_inds.Add(i);
                         GC.Collect();
 
                         
@@ -267,12 +269,117 @@ namespace opengl3
                 if (objps.Count >= 3)
                 {
                     calibrate_stereo_joint(objps.ToArray(), ps1.ToArray(), ps2.ToArray());
+                    check_stereo_distances(objps.ToArray(), ps1.ToArray(), ps2.ToArray(), frame_inds.ToArray(), pattern_size);
                 }
                 else
                 {
                     Console.WriteLine("stereo joint: мало кадров с найденным шаблоном (" + objps.Count + "), R взято из последнего кадра");
                 }
             }
+        }
+
+        static double dist3(MCvPoint3D32f a, MCvPoint3D32f b)
+        {
+            double dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
+            return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        /// <summary>
+        /// Проверка стереокалибровки по известным размерам шаблона: точки каждого кадра восстанавливаются в 3d
+        /// (триангуляция по итоговому R) и измеренные расстояния сравниваются с номинальными.
+        /// Выводятся: две стороны сетки (катеты), диагональ, СКО ошибки шага между соседними точками
+        /// и средний зазор между скрещивающимися лучами двух камер.
+        /// </summary>
+        void check_stereo_distances(MCvPoint3D32f[][] objps, System.Drawing.PointF[][] ps1, System.Drawing.PointF[][] ps2, int[] frame_inds, System.Drawing.Size pattern_size)
+        {
+            if (R == null) return;
+            int w = pattern_size.Width;
+            int h = pattern_size.Height;
+            int len = w * h;
+            if (w < 2 || h < 2) return;
+            var cs0 = new Matrix<double>(new double[4, 4] { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 1 } });
+            // пары точек: сторона вдоль Width, сторона вдоль Height, диагональ
+            var pairs = new int[][] { new int[] { 0, w - 1 }, new int[] { 0, len - w }, new int[] { 0, len - 1 } };
+            var names = new string[] { "side_w", "side_h", "diag" };
+            var nominal = new double[3];
+            var sum_err = new double[3];
+            var sum_sq = new double[3];
+            var max_err = new double[3];
+            double step_sq_all = 0;
+            int step_n_all = 0;
+            double gap_all = 0;
+            int n_fr = 0;
+
+            Console.WriteLine("stereo check, mm: frame | side_w (err) | side_h (err) | diag (err) | step rms err | ray gap");
+            for (int f = 0; f < objps.Length; f++)
+            {
+                if (objps[f] == null || ps1[f] == null || ps2[f] == null) continue;
+                if (objps[f].Length != len || ps1[f].Length != len || ps2[f].Length != len) continue;
+
+                var lines1 = computeTracesCam(PointF.toPointF(ps1[f]), cameraCVs[0], cs0);
+                var lines2 = computeTracesCam(PointF.toPointF(ps2[f]), cameraCVs[1], cs0 * R);
+                var p3 = new Point3d_GL[len];
+                double gap = 0;
+                for (int k = 0; k < len; k++)
+                {
+                    p3[k] = Line3d_GL.point_betw_cross_lines(lines1[k], lines2[k]);
+                    gap += Math.Abs(Line3d_GL.dist_cross_lines(lines1[k], lines2[k]));
+                }
+                gap /= len;
+
+                var line = frame_inds[f].ToString();
+                for (int d = 0; d < 3; d++)
+                {
+                    int a = pairs[d][0], b = pairs[d][1];
+                    double nom = dist3(objps[f][a], objps[f][b]);
+                    double meas = (p3[a] - p3[b]).magnitude();
+                    double err = meas - nom;
+                    nominal[d] = nom;
+                    sum_err[d] += err;
+                    sum_sq[d] += err * err;
+                    if (Math.Abs(err) > Math.Abs(max_err[d])) max_err[d] = err;
+                    line += " | " + Math.Round(meas, 3) + " (" + Math.Round(err, 3) + ")";
+                }
+
+                // шаг между соседними точками сетки (по строкам и по столбцам)
+                double step_sq = 0;
+                int step_n = 0;
+                for (int j = 0; j < h; j++)
+                {
+                    for (int i = 0; i < w; i++)
+                    {
+                        int k = j * w + i;
+                        if (i + 1 < w)
+                        {
+                            double e = (p3[k] - p3[k + 1]).magnitude() - dist3(objps[f][k], objps[f][k + 1]);
+                            step_sq += e * e; step_n++;
+                        }
+                        if (j + 1 < h)
+                        {
+                            double e = (p3[k] - p3[k + w]).magnitude() - dist3(objps[f][k], objps[f][k + w]);
+                            step_sq += e * e; step_n++;
+                        }
+                    }
+                }
+                step_sq_all += step_sq;
+                step_n_all += step_n;
+                gap_all += gap;
+                n_fr++;
+                line += " | " + Math.Round(Math.Sqrt(step_sq / step_n), 3) + " | " + Math.Round(gap, 3);
+                Console.WriteLine(line);
+            }
+            if (n_fr == 0) return;
+
+            Console.WriteLine("stereo check summary, frames " + n_fr + ":");
+            for (int d = 0; d < 3; d++)
+            {
+                Console.WriteLine("  " + names[d] + ": nominal " + Math.Round(nominal[d], 3)
+                    + "; mean err " + Math.Round(sum_err[d] / n_fr, 3)
+                    + "; rms err " + Math.Round(Math.Sqrt(sum_sq[d] / n_fr), 3)
+                    + "; max err " + Math.Round(max_err[d], 3));
+            }
+            Console.WriteLine("  step: rms err " + Math.Round(Math.Sqrt(step_sq_all / step_n_all), 3)
+                + "; ray gap mean " + Math.Round(gap_all / n_fr, 3));
         }
 
         /// <summary>
