@@ -219,11 +219,20 @@ namespace opengl3
                 }
             }
         }
+        /// <summary>
+        /// true: при стереокалибровке внутренние параметры обеих камер уточняются совместно по всем кадрам;
+        /// false: внутренние параметры остаются как загружены, ищется только взаимное положение камер
+        /// </summary>
+        public static bool refine_intrinsics = true;
+
         public void calibrate_stereo(Frame[] frames, PatternType patternType, System.Drawing.Size pattern_size, float mark_size)
         {
             
             if (cameraCVs.Length==2)
             {
+                var objps = new List<MCvPoint3D32f[]>();
+                var ps1 = new List<System.Drawing.PointF[]>();
+                var ps2 = new List<System.Drawing.PointF[]>();
                 for (int i = 0; i < frames.Length; i++)
                 {
                     var pos1 = cameraCVs[0].compPos(frames[i].im, patternType, pattern_size, mark_size);
@@ -240,6 +249,11 @@ namespace opengl3
                         Console.WriteLine(i + " " + Math.Round( R[0, 3],3) + " " + Math.Round(R[1, 3], 3) + " " + Math.Round(R[2, 3], 3) + " " + " " + R[0, 2] + " " + R[1, 2] + " " + R[2, 2] + " "//
                         + c1[0, 3] + " " + c1[1, 3] + " " + c1[2, 3] + " " + c1[2, 0] + " " + c1[2, 1] + " " + c1[2, 2]
                         + " reproj: " + Math.Round(cameraCVs[0].last_reproj_err, 3) + " " + Math.Round(cameraCVs[1].last_reproj_err, 3));
+
+                        // точки этого кадра для совместной калибровки по всем кадрам
+                        objps.Add(cameraCVs[0].last_obp);
+                        ps1.Add(cameraCVs[0].last_corners);
+                        ps2.Add(cameraCVs[1].last_corners);
                         GC.Collect();
 
                         
@@ -247,7 +261,65 @@ namespace opengl3
 
                    // Console.WriteLine(comp_pos);
                 }
+
+                // Покадровые R выше - только для контроля: одна плоская мишень плохо разделяет поворот и сдвиг,
+                // поэтому они "гуляют". Итоговое R считается одно на все кадры.
+                if (objps.Count >= 3)
+                {
+                    calibrate_stereo_joint(objps.ToArray(), ps1.ToArray(), ps2.ToArray());
+                }
+                else
+                {
+                    Console.WriteLine("stereo joint: мало кадров с найденным шаблоном (" + objps.Count + "), R взято из последнего кадра");
+                }
             }
+        }
+
+        /// <summary>
+        /// Совместная стереокалибровка по всем кадрам: одно взаимное положение камер,
+        /// минимизирующее ошибку репроекции в обеих камерах сразу.
+        /// </summary>
+        void calibrate_stereo_joint(MCvPoint3D32f[][] objps, System.Drawing.PointF[][] ps1, System.Drawing.PointF[][] ps2)
+        {
+            var k1 = cameraCVs[0].cameramatrix.Clone();
+            var d1 = cameraCVs[0].distortmatrix.Clone();
+            var k2 = cameraCVs[1].cameramatrix.Clone();
+            var d2 = cameraCVs[1].distortmatrix.Clone();
+            var r = new Mat();
+            var t = new Mat();
+            var e = new Mat();
+            var f = new Mat();
+            var flags = refine_intrinsics ? CalibType.UseIntrinsicGuess : CalibType.FixIntrinsic;
+
+            double err = CvInvoke.StereoCalibrate(objps, ps1, ps2, k1, d1, k2, d2, cameraCVs[0].image_size,
+                r, t, e, f, flags, new MCvTermCriteria(200, 1e-7));
+
+            // OpenCV: X2 = r * X1 + t (камера 1 -> камера 2); в проекте R - камера 2 -> камера 1
+            var r_data = (double[,])r.GetData();
+            var t_data = (double[,])t.GetData();
+            var m12 = new Matrix<double>(new double[4, 4]
+            {
+                { r_data[0, 0], r_data[0, 1], r_data[0, 2], t_data[0, 0] },
+                { r_data[1, 0], r_data[1, 1], r_data[1, 2], t_data[1, 0] },
+                { r_data[2, 0], r_data[2, 1], r_data[2, 2], t_data[2, 0] },
+                { 0, 0, 0, 1 }
+            });
+            R = new Matrix<double>(4, 4);
+            CvInvoke.Invert(m12, R, DecompMethod.LU);
+            R_inv = m12;
+
+            if (refine_intrinsics)
+            {
+                cameraCVs[0].set_intrinsics(k1, d1);
+                cameraCVs[1].set_intrinsics(k2, d2);
+            }
+
+            double baseline = Math.Sqrt(R[0, 3] * R[0, 3] + R[1, 3] * R[1, 3] + R[2, 3] * R[2, 3]);
+            Console.WriteLine("stereo joint: frames " + objps.Length + "; reproj rms " + Math.Round(err, 4)
+                + "; t " + Math.Round(R[0, 3], 3) + " " + Math.Round(R[1, 3], 3) + " " + Math.Round(R[2, 3], 3)
+                + "; baseline " + Math.Round(baseline, 3));
+            prin.t("stereo joint R:");
+            prin.t(R);
         }
 
        

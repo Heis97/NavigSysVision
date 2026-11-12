@@ -174,6 +174,29 @@ namespace opengl3
 
         /// <summary>СКО ошибки репроекции последнего compPos по шаблону, пикс</summary>
         public double last_reproj_err = -1;
+        /// <summary>3d-координаты точек шаблона последнего compPos (в том же порядке, что last_corners)</summary>
+        public MCvPoint3D32f[] last_obp;
+
+        /// <summary>
+        /// Замена внутренних параметров камеры (после совместной стереокалибровки).
+        /// Производные матрицы и карты пересчитываются, текущая поза камеры сохраняется.
+        /// </summary>
+        public void set_intrinsics(Matrix<double> _cameramatrix, Matrix<double> _distortmatrix)
+        {
+            var cs = matrixCS;
+            var sc = matrixSC;
+            var r = cur_r;
+            var t = cur_t;
+            var p = pos;
+            cameramatrix = _cameramatrix;
+            distortmatrix = _distortmatrix;
+            init_vars();
+            matrixCS = cs;
+            matrixSC = sc;
+            cur_r = r;
+            cur_t = t;
+            pos = p;
+        }
 
         /// <summary>
         /// 3d-координаты всех точек сетки по 4 угловым точкам
@@ -292,6 +315,7 @@ namespace opengl3
             // 3d-координаты каждой точки - интерполяция между теми же 4 углами points3d,
             // поэтому система координат шаблона остаётся прежней
             var points3d_all = gridObp(points3d, size_patt);
+            last_obp = points3d_all;
             var pos_cur = compPos(points3d_all, cornF);
             last_reproj_err = reprojErr(points3d_all, cornF);
             /*Console.WriteLine(pos_cur[0] + " " + pos_cur[1] + " " + pos_cur[2] + " ");
