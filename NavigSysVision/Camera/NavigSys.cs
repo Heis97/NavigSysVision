@@ -231,8 +231,8 @@ namespace opengl3
             navig_tools.Save("tools_navig.json");
             for (int i = 0; i < mat_global.Length; i++) mat_global[i] = new Mat();
 
-            var conf1 = "cam1_cam_cal121126c.txt";
-            var conf2 = "cam2_cam_cal121126c.txt";
+            var conf1 = "cam1_cam_cal121126_2a.txt";
+            var conf2 = "cam2_cam_cal121126_2a.txt";
             Console.WriteLine("loadScanner");
             var cam1 = CameraCV.load_camera(conf1);
             var cam2 = CameraCV.load_camera(conf2);
@@ -240,7 +240,7 @@ namespace opengl3
 
             stereo_cam = new StereoCamera(new CameraCV[] { cam1, cam2 });
 
-            var stereo_cal_1 = "cam_cal121126a";
+            var stereo_cal_1 = "cam_cal121126_2a";
             var frms_stereo = FrameLoader.loadImages_stereoCV(@"cam1\" + stereo_cal_1, @"cam2\" + stereo_cal_1,  FrameType.Pattern, false);
             stereo_cam.calibrate_stereo(frms_stereo,PatternType.Mesh,chess_size,markSize);
 
@@ -283,9 +283,13 @@ namespace opengl3
             {
                 mat_global[ind_cam].Dispose();
                 mat_global[ind_cam] = frame;
+                frame_counter[ind_cam]++;
             }
 
         }
+        long[] frame_counter = new long[6];   // номер последнего кадра каждой камеры (меняется под mat_lock)
+        /// <summary>сколько кадров усредняется при сохранении по клавише 's' (1 - сохранять один кадр, как раньше)</summary>
+        int save_frames_n = 10;
         Size chess_size = new Size(11,8);
         float markSize = 18.37f;//18.37f;
         void capturingVideo(object sender, EventArgs e)
@@ -294,9 +298,9 @@ namespace opengl3
         }
         void calib_cam()
         {
-            var frms_1 = FrameLoader.loadImages_diff(@"cam2\cam_cal121126a", FrameType.Pattern, PatternType.Mesh);//
+            var frms_1 = FrameLoader.loadImages_diff(@"cam2\cam_cal121126_2", FrameType.Pattern, PatternType.Mesh);//
             var cam1 = new CameraCV(frms_1, chess_size, markSize, null);
-            cam1.save_camera("cam2_cam_cal121126c.txt");
+            cam1.save_camera("cam2_cam_cal121126_2a.txt");
         }
         private void con_navig_sys()
         {
@@ -312,7 +316,7 @@ namespace opengl3
             server_thread1.Start();
 
         }
-        string cur_save_fold = "cam_cal121126a";
+        string cur_save_fold = "cam_cal121126_3";
         int glob_im_coubter = 0;
 
         bool fon_inited = false;
@@ -336,7 +340,7 @@ namespace opengl3
             var mats_fon = new Mat[cams_num];
             for (int i = 0; i < cams_num; i++)
             {
-                CvInvoke.NamedWindow("cam" + i);
+                CvInvoke.NamedWindow("cam" + i, WindowFlags.KeepRatio);
                 mats[i] = new Mat();
                 mats_show[i] = new Mat();
                 mats_find[i] = new Mat();
@@ -344,6 +348,16 @@ namespace opengl3
             }
                 
             
+            // накопление кадров для усреднённого сохранения (клавиша 's')
+            bool burst_active = false;
+            int burst_iters = 0;
+            var burst_acc = new Mat[cams_num];
+            var burst_cnt = new int[cams_num];
+            var burst_last_counter = new long[cams_num];
+            var burst_ps_first = new System.Drawing.PointF[cams_num][];
+            var burst_ps_last = new System.Drawing.PointF[cams_num][];
+            var cur_counter = new long[cams_num];
+
             while (true)
             {
                 var ps_all_2d = new System.Drawing.PointF[cams_num][];
@@ -360,6 +374,7 @@ namespace opengl3
                             {
                                 mats_show[i]-=mats_fon[i];
                             }
+                            cur_counter[i] = frame_counter[i];
                             has_frame = true;
                         }
                     }
@@ -368,6 +383,26 @@ namespace opengl3
                         mats[i] = mats_show[i].Clone();
                         mats_find[i] = FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], chess_size,true);
                         //FindCircles.findCircles_v3(mats_show[i], ref ps_all_2d[i], new Size(5, 5), false); mats_find[i] = mats_show[i].Clone();
+
+                        // усреднённое сохранение: берём только новые кадры камеры
+                        if (burst_active && burst_cnt[i] < save_frames_n && cur_counter[i] != burst_last_counter[i])
+                        {
+                            burst_last_counter[i] = cur_counter[i];
+                            var f32 = new Mat();
+                            mats[i].ConvertTo(f32, DepthType.Cv32F);
+                            if (burst_cnt[i] == 0)
+                            {
+                                burst_acc[i] = f32;
+                                burst_ps_first[i] = ps_all_2d[i] == null ? null : (System.Drawing.PointF[])ps_all_2d[i].Clone();
+                            }
+                            else
+                            {
+                                CvInvoke.Add(burst_acc[i], f32, burst_acc[i]);
+                                f32.Dispose();
+                            }
+                            burst_ps_last[i] = ps_all_2d[i] == null ? null : (System.Drawing.PointF[])ps_all_2d[i].Clone();
+                            burst_cnt[i]++;
+                        }
                     }
                         
                 }
@@ -405,6 +440,35 @@ namespace opengl3
                     }
                 }
                 */
+                if (burst_active)
+                {
+                    burst_iters++;
+                    bool burst_done = true;
+                    for (int i = 0; i < cams_num; i++) burst_done &= burst_cnt[i] >= save_frames_n;
+                    if (burst_done)
+                    {
+                        var avg = new Mat[cams_num];
+                        for (int i = 0; i < cams_num; i++)
+                        {
+                            avg[i] = new Mat();
+                            burst_acc[i].ConvertTo(avg[i], DepthType.Cv8U, 1.0 / burst_cnt[i]);
+                            burst_acc[i].Dispose();
+                            // сдвиг шаблона за время накопления: если заметно больше ~0.1 пикс, шаблон или камера двигались
+                            Console.WriteLine("cam" + (i + 1) + ": усреднено кадров " + burst_cnt[i] + "; " + burst_shift(burst_ps_first[i], burst_ps_last[i]));
+                        }
+                        UtilOpenCV.saveImage(avg[0], cams_num > 1 ? avg[1] : null, glob_im_coubter.ToString(), cur_save_fold);
+                        glob_im_coubter++;
+                        for (int i = 0; i < cams_num; i++) avg[i].Dispose();
+                        burst_active = false;
+                    }
+                    else if (burst_iters > 100 * save_frames_n)
+                    {
+                        Console.WriteLine("сохранение отменено: камеры не выдали " + save_frames_n + " новых кадров");
+                        for (int i = 0; i < cams_num; i++) burst_acc[i]?.Dispose();
+                        burst_active = false;
+                    }
+                }
+
                 for (int i = 0; i < cams_num; i++)
                 {
                     if (mats_find[i] != null && !mats_find[i].IsEmpty)
@@ -420,8 +484,27 @@ namespace opengl3
                 int key = CvInvoke.WaitKey(10);
                 if (key == 's')
                 {
-                    UtilOpenCV.saveImage(mats[0], mats[1], glob_im_coubter.ToString(), cur_save_fold);
-                    glob_im_coubter++;
+                    Console.WriteLine("s_pressed");
+                    if (save_frames_n <= 1)
+                    {
+                        UtilOpenCV.saveImage(mats[0], mats[1], glob_im_coubter.ToString(), cur_save_fold);
+                        glob_im_coubter++;
+                    }
+                    else if (!burst_active)
+                    {
+                        // начинаем накопление save_frames_n кадров с каждой камеры; сохранение - когда наберутся
+                        burst_active = true;
+                        burst_iters = 0;
+                        for (int i = 0; i < cams_num; i++)
+                        {
+                            burst_cnt[i] = 0;
+                            burst_acc[i] = null;
+                            burst_last_counter[i] = cur_counter[i];
+                            burst_ps_first[i] = null;
+                            burst_ps_last[i] = null;
+                        }
+                        Console.WriteLine("накопление " + save_frames_n + " кадров, не двигайте шаблон...");
+                    }
                 }
                 /*else if (key == 'f')
                 {
@@ -441,6 +524,23 @@ namespace opengl3
             foreach (var c in videoCaptures) { c?.Stop(); c?.Dispose(); }
             CvInvoke.DestroyAllWindows();
         }
+        /// <summary>смещение центров шаблона между первым и последним кадром накопления, пикс</summary>
+        static string burst_shift(System.Drawing.PointF[] first, System.Drawing.PointF[] last)
+        {
+            if (first == null || last == null || first.Length == 0 || first.Length != last.Length) return "шаблон не найден";
+            if ((first[0].IsEmpty && first[first.Length - 1].IsEmpty) || (last[0].IsEmpty && last[last.Length - 1].IsEmpty)) return "шаблон не найден";
+            double s = 0, max = 0;
+            for (int k = 0; k < first.Length; k++)
+            {
+                double dx = last[k].X - first[k].X;
+                double dy = last[k].Y - first[k].Y;
+                double d = Math.Sqrt(dx * dx + dy * dy);
+                s += d * d;
+                if (d > max) max = d;
+            }
+            return "сдвиг шаблона rms " + Math.Round(Math.Sqrt(s / first.Length), 3) + " max " + Math.Round(max, 3) + " пикс";
+        }
+
         long frame_id = 0;   // поле класса
 
         static string PoseLine(long frame, int ind, Matrix<double>? M, double rms)
