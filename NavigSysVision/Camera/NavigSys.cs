@@ -123,6 +123,7 @@ namespace opengl3
                 {
                     ind_main_p = i;
                     var dist_have = new int[dists.Length];
+                    var dists_real = new double[dists.Length];
                     Array.Fill(dist_have, -1);
 
                     for (int j = 0; j < cur_dists.Length; j++)
@@ -132,6 +133,7 @@ namespace opengl3
                             if (Math.Abs(cur_dists[j] - dists[k]) < Err && cur_dists[j]>0)
                             {
                                 dist_have[k] = j;
+                                dists_real[k] = cur_dists[j];
                             }
                         }
                     }
@@ -143,13 +145,15 @@ namespace opengl3
                         if( dist_have[k]>=0)
                         {
                             ps_out[k] = ps[dist_have[k]];
+                            //Console.Write(Math.Round(dists[k], 2) + "=" + Math.Round(dists_real[k], 2)+";        ");
                         }
                         else
                         {
                             all_dist_have = false;
                         }
                     }
-                    if(all_dist_have)
+                    //Console.WriteLine();
+                    if (all_dist_have)
                     {
                         ps_out[ps_out.Length-1] = ps[ind_main_p];
                         return ps_out;
