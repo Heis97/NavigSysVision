@@ -213,8 +213,8 @@ namespace opengl3
 
         Size cameraSize = new Size(1920, 1080);
         volatile Mat[] mat_global = new Mat[6];
-        int cam1_ind = 0;
-        int cam2_ind = 1;
+        int cam1_ind = 2;
+        int cam2_ind = 0;
         int cams_num = 2;
         readonly object mat_lock = new object();
         TCPserver _TCPserver1;
